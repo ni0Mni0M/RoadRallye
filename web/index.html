@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rally Round Trips</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="panel">
+      <header class="panel-head">
+        <h1>Rally round trips</h1>
+        <p class="meta" id="dataInfo">Loading rallies…</p>
+      </header>
+
+      <form id="filters" class="filters" autocomplete="off" onsubmit="return false">
+        <fieldset>
+          <legend>Where</legend>
+          <label class="field">
+            <span class="label">Home</span>
+            <select id="home"></select>
+          </label>
+          <label class="field slider slider-out">
+            <span class="label">Start within <output id="startRadiusOut"></output></span>
+            <input type="range" id="startRadius" min="0" max="300" step="10">
+          </label>
+          <label class="field slider slider-back">
+            <span class="label">Return within <output id="returnRadiusOut"></output></span>
+            <input type="range" id="returnRadius" min="50" max="1000" step="25">
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>When</legend>
+          <div class="row">
+            <label class="field">
+              <span class="label">Earliest pickup</span>
+              <input type="date" id="earliest">
+            </label>
+            <label class="field">
+              <span class="label">Back by</span>
+              <input type="date" id="latest">
+            </label>
+          </div>
+          <p class="error" id="dateError" role="alert"></p>
+        </fieldset>
+
+        <fieldset>
+          <legend>Flexibility</legend>
+          <div class="field">
+            <span class="label" id="legsLabel">Rallies per trip</span>
+            <div class="segmented" role="radiogroup" aria-labelledby="legsLabel">
+              <label><input type="radio" name="legs" value="2"><span>2</span></label>
+              <label><input type="radio" name="legs" value="2-3"><span>2 or 3</span></label>
+              <label><input type="radio" name="legs" value="3"><span>3 only</span></label>
+            </div>
+          </div>
+          <label class="field slider">
+            <span class="label">Wait between legs <output id="maxWaitOut"></output></span>
+            <input type="range" id="maxWait" min="0" max="10" step="1">
+          </label>
+          <label class="field slider slider-hop">
+            <span class="label">Train hop between rallies <output id="hopRadiusOut"></output></span>
+            <input type="range" id="hopRadius" min="0" max="150" step="5">
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Way home</legend>
+          <label class="check">
+            <input type="checkbox" id="wayHome">
+            <span>Plan how to get home from the last drop-off</span>
+          </label>
+          <div id="wayHomeOptions" hidden>
+            <label class="field">
+              <span class="label">Drop off the last van around</span>
+              <input type="time" id="dropoffTime" step="900">
+            </label>
+            <div class="row">
+              <label class="field">
+                <span class="label">Car uses (l/100 km)</span>
+                <input type="number" id="carConsumption" min="1" max="30" step="0.5" inputmode="decimal">
+              </label>
+              <label class="field">
+                <span class="label">Fuel price (€/l)</span>
+                <input type="number" id="fuelPrice" min="0.5" max="5" step="0.05" inputmode="decimal">
+              </label>
+            </div>
+          </div>
+        </fieldset>
+      </form>
+
+      <div class="results-head">
+        <p id="resultCount" aria-live="polite"></p>
+        <select id="sort" aria-label="Sort trips">
+          <option value="start">Earliest start</option>
+          <option value="days">Shortest trip</option>
+          <option value="wait">Least waiting</option>
+          <option value="distance">Ends closest to home</option>
+        </select>
+      </div>
+      <div id="viaChip"></div>
+      <ol id="results" class="results"></ol>
+    </aside>
+
+    <main class="map-wrap">
+      <div id="map" role="region" aria-label="Map of round trips"></div>
+      <div class="map-actions">
+        <button type="button" id="overview" class="map-btn" hidden>Show all trips</button>
+        <button type="button" id="playAll" class="map-btn primary">Play all</button>
+      </div>
+      <div class="legend" aria-hidden="true">
+        <span><i class="swatch line out"></i>Outbound rally</span>
+        <span id="legendMid" hidden><i class="swatch line mid"></i>Middle rally</span>
+        <span><i class="swatch line back"></i>Return rally</span>
+        <span><i class="swatch line hop"></i>Train hop</span>
+        <span id="legendHome" hidden><i class="swatch line home"></i>Way home</span>
+        <span><i class="swatch ring out"></i>Start area</span>
+        <span><i class="swatch ring back"></i>Return area</span>
+      </div>
+    </main>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script src="data/rallies.js"></script>
+  <script src="data/airports.js"></script>
+  <script src="matching.js"></script>
+  <script src="wayhome.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

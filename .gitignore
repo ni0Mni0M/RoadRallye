@@ -1,0 +1,11 @@
+# Personal settings (your Transitous contact). Copy config.example.json to create it.
+config.local.json
+
+# Downloaded data: rebuilt by update-data.bat, changes daily, and comes from third parties.
+web/data/
+
+# Local editor and assistant settings
+.claude/
+
+__pycache__/
+*.tmp
