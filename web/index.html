@@ -68,6 +68,35 @@
         </fieldset>
 
         <fieldset>
+          <legend>Costs (estimate)</legend>
+          <div class="row">
+            <label class="field">
+              <span class="label">Rally fee (€)</span>
+              <input type="number" id="rallyFee" min="0" max="2000" step="1" inputmode="decimal">
+            </label>
+            <label class="field">
+              <span class="label">Insurance</span>
+              <select id="insurance">
+                <option value="0">Basic, €0 a day</option>
+                <option value="15">Plus, €15 a day</option>
+                <option value="29">Max, €29 a day</option>
+              </select>
+            </label>
+          </div>
+          <div class="row">
+            <label class="field">
+              <span class="label">Van uses (l/100 km)</span>
+              <input type="number" id="vanConsumption" min="3" max="25" step="0.5" inputmode="decimal">
+            </label>
+            <label class="field">
+              <span class="label">Fuel price (€/l)</span>
+              <input type="number" id="fuelPrice" min="0.5" max="5" step="0.05" inputmode="decimal">
+            </label>
+          </div>
+          <p class="hint">Rally fees, insurance and diesel for the van. Tolls aren't included.</p>
+        </fieldset>
+
+        <fieldset>
           <legend>Way home</legend>
           <label class="check">
             <input type="checkbox" id="wayHome">
@@ -78,31 +107,55 @@
               <span class="label">Drop off the last van around</span>
               <input type="time" id="dropoffTime" step="900">
             </label>
-            <div class="row">
-              <label class="field">
-                <span class="label">Car uses (l/100 km)</span>
-                <input type="number" id="carConsumption" min="1" max="30" step="0.5" inputmode="decimal">
-              </label>
-              <label class="field">
-                <span class="label">Fuel price (€/l)</span>
-                <input type="number" id="fuelPrice" min="0.5" max="5" step="0.05" inputmode="decimal">
-              </label>
-            </div>
+            <label class="field">
+              <span class="label">Car home uses (l/100 km)</span>
+              <input type="number" id="carConsumption" min="1" max="30" step="0.5" inputmode="decimal">
+            </label>
           </div>
         </fieldset>
       </form>
 
-      <div class="results-head">
-        <p id="resultCount" aria-live="polite"></p>
-        <select id="sort" aria-label="Sort trips">
-          <option value="start">Earliest start</option>
-          <option value="days">Shortest trip</option>
-          <option value="wait">Least waiting</option>
-          <option value="distance">Ends closest to home</option>
-        </select>
+      <div class="segmented view-switch" role="radiogroup" aria-label="Show">
+        <label><input type="radio" name="view" value="trips"><span>Trips</span></label>
+        <label><input type="radio" name="view" value="destinations"><span>Destinations</span></label>
       </div>
-      <div id="viaChip"></div>
-      <ol id="results" class="results"></ol>
+
+      <section id="tripsView">
+        <div class="results-head">
+          <p id="resultCount" aria-live="polite"></p>
+          <select id="sort" aria-label="Sort trips">
+            <option value="start">Earliest start</option>
+            <option value="days">Shortest trip</option>
+            <option value="wait">Least waiting</option>
+            <option value="distance">Ends closest to home</option>
+            <option value="cost">Lowest cost</option>
+          </select>
+        </div>
+        <div id="viaChip"></div>
+        <ol id="results" class="results"></ol>
+      </section>
+
+      <section id="rankView" hidden>
+        <div class="rank-controls">
+          <div class="segmented" role="radiogroup" aria-label="Rank">
+            <label><input type="radio" name="rankMode" value="destinations"><span>Where to go</span></label>
+            <label><input type="radio" name="rankMode" value="starts"><span>Where to start</span></label>
+          </div>
+          <label class="field">
+            <span class="label">Rank by</span>
+            <select id="rankBy"></select>
+          </label>
+          <div id="combineChips" class="chips" hidden></div>
+          <div class="rank-filters">
+            <label class="check small"><input type="checkbox" id="onlyFavs"><span>Only favourites</span></label>
+            <label class="check small"><input type="checkbox" id="hideVisited"><span>Hide places I've been</span></label>
+          </div>
+        </div>
+        <p id="rankCount" class="rank-count" aria-live="polite"></p>
+        <p id="rankNote" class="hint"></p>
+        <ol id="ranking" class="ranking"></ol>
+        <p id="rankCredits" class="wh-credit"></p>
+      </section>
     </aside>
 
     <main class="map-wrap">
@@ -125,8 +178,11 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <script src="data/rallies.js"></script>
+  <script src="data/routes.js"></script>
+  <script src="data/climate.js"></script>
   <script src="matching.js"></script>
   <script src="wayhome.js"></script>
+  <script src="ranking.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

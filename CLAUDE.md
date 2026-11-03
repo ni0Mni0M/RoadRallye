@@ -23,6 +23,6 @@ tweaks can go straight to `main`.
 
 ## Project notes
 
-- Tests: `node --test tests/matching.test.js tests/wayhome.test.js`
-- Never commit `config.local.json` (the user's contact for Transitous) or `web/data/`.
+- Tests: `node --test tests/matching.test.js tests/wayhome.test.js tests/ranking.test.js`
+- Never commit `config.local.json` (the user's contact for Transitous), `web/data/` or `scraper/cache/`.
 - Commits use the repo-local identity `RoadRalley <roadralley@users.noreply.github.com>`.
