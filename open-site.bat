@@ -1,5 +1,9 @@
 @echo off
-rem Serves the website on http://localhost:8765 and opens it. Close this window to stop it.
+rem Serves the website and opens it. Close this window to stop it.
+rem Optional: a port number, e.g. "open-site.bat 8775" (compare.bat uses this). Default 8765.
 cd /d "%~dp0"
-start "" http://localhost:8765/
-python serve.py 8765
+set "PORT=%~1"
+if "%PORT%"=="" set "PORT=8765"
+start "" http://localhost:%PORT%/
+python serve.py %PORT%
+if errorlevel 1 pause

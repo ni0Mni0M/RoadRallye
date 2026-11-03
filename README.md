@@ -72,6 +72,21 @@ To change or remove it, open Task Scheduler, or in PowerShell:
 Unregister-ScheduledTask -TaskName "Rally data update"
 ```
 
+## Versions and trying out big changes
+
+Before every big change the current version is saved as a git tag (a named restore point, e.g.
+`before-ranking`), and the change is built on its own branch in a second folder next to this
+one (a git worktree). `main` stays the version you know until you decide to keep the change.
+
+- **Compare side by side:** double-click `compare.bat`. This folder opens on port 8765, every
+  branch folder on 8775, 8776, ... `compare.bat /list` only shows what it would start.
+- **See all restore points:** `git tag`
+- **Look at an old version:** `git switch --detach before-ranking`, and back with `git switch main`
+- **Go back for good** (keeps the newer history, so it can be undone too):
+  `git revert --no-edit before-ranking..main`
+
+The rules for this are in `CLAUDE.md`.
+
 ## How it works
 
 - `scraper/fetch_rallies.py` calls the JSON endpoints behind `booking.roadsurfer.com/rally`:
