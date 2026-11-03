@@ -309,28 +309,79 @@
 
   // ---------- Matching ----------
 
+  // The rallies of the providers that are switched on.
+  function visibleRallies() {
+    const hidden = new Set(settings.hideProviders);
+    return hidden.size ? data.rallies.filter((r) => !hidden.has(providerOf(r))) : data.rallies;
+  }
+
+  // Round trips from one home station with the current filters (the "via" filter comes on top).
+  function tripsFrom(home, rallies) {
+    const found = M.findRoundTrips({ stations: data.stations, rallies }, {
+      home,
+      startRadiusKm: settings.startRadius,
+      returnRadiusKm: settings.returnRadius,
+      hopRadiusKm: settings.hopRadius,
+      earliest: settings.earliest,
+      latest: settings.latest,
+      maxWaitDays: settings.maxWait,
+      maxLegs: settings.legs === "2" ? 2 : 3,
+      sort: settings.sort,
+    });
+    return settings.legs === "3" ? found.filter((t) => t.legs.length === 3) : found;
+  }
+
+  // How many round trips each station in the home list would have with the current filters ("Berlin (17)").
+  // Counting all of them takes up to a few hundred ms, so it runs in short slices, and only again
+  // when a filter other than the home station changed.
+  const homeCounts = new Map();
+  let countKey = "";
+  let countToken = 0;
+
+  function countHomes(error) {
+    const key = JSON.stringify([
+      error, settings.startRadius, settings.returnRadius, settings.hopRadius, settings.earliest, settings.latest,
+      settings.maxWait, settings.legs, settings.hideProviders,
+    ]);
+    if (key === countKey) return;
+    countKey = key;
+    const token = ++countToken;
+    homeCounts.clear();
+    if (error) {
+      updateHomeLabels();
+      return;
+    }
+    const rallies = visibleRallies();
+    const queue = [...homeChoices];
+    const slice = () => {
+      if (token !== countToken) return; // the filters changed again meanwhile
+      const until = performance.now() + 12;
+      while (queue.length && performance.now() < until) {
+        const s = queue.shift();
+        homeCounts.set(s.id, tripsFrom(s, rallies).length);
+      }
+      if (queue.length) setTimeout(slice, 0);
+      else updateHomeLabels();
+    };
+    setTimeout(slice, 0);
+  }
+
+  function updateHomeLabels() {
+    for (const option of $("home").options) {
+      const s = stations.get(homeById.get(option.value));
+      const n = homeCounts.get(s.id);
+      option.textContent = n === undefined ? s.name : `${s.name} (${n})`;
+    }
+  }
+
   function compute() {
     let error = "";
     if (!settings.earliest || !settings.latest) error = "Pick both dates.";
     else if (settings.latest < settings.earliest) error = "The back-by date is before the earliest pickup.";
     $("dateError").textContent = error;
 
-    const hidden = new Set(settings.hideProviders);
-    const rallies = hidden.size ? data.rallies.filter((r) => !hidden.has(providerOf(r))) : data.rallies;
-    allTrips = error
-      ? []
-      : M.findRoundTrips({ stations: data.stations, rallies }, {
-          home: stations.get(settings.home),
-          startRadiusKm: settings.startRadius,
-          returnRadiusKm: settings.returnRadius,
-          hopRadiusKm: settings.hopRadius,
-          earliest: settings.earliest,
-          latest: settings.latest,
-          maxWaitDays: settings.maxWait,
-          maxLegs: settings.legs === "2" ? 2 : 3,
-          sort: settings.sort,
-        });
-    if (settings.legs === "3") allTrips = allTrips.filter((t) => t.legs.length === 3);
+    allTrips = error ? [] : tripsFrom(stations.get(settings.home), visibleRallies());
+    countHomes(error);
     $("legendMid").hidden = settings.legs === "2";
     $("legendHome").hidden = !settings.wayHome;
 
@@ -355,6 +406,27 @@
     renderList();
     drawBase();
     clearSelection();
+  }
+
+  function setHome(id) {
+    settings.home = id;
+    $("home").value = String(id);
+    saveSettings();
+    stopPlay();
+    compute();
+  }
+
+  // The home-list station for a map station: itself, or for an Imoova city the roadsurfer station
+  // in the same place (the home list only keeps that one).
+  function homeFor(s) {
+    if (homeById.has(String(s.id))) return s;
+    let best = s;
+    let bestKm = Infinity;
+    for (const o of roadsurferStations) {
+      const km = M.haversineKm(s, o);
+      if (km < bestKm) [best, bestKm] = [o, km];
+    }
+    return best;
   }
 
   // ---------- List ----------
@@ -561,12 +633,47 @@
         fillOpacity: n || role !== "far" ? 0.95 : 0.6,
       });
       const where = role === "out" ? "Start area" : role === "back" ? "Return area" : fmtKm(km) + " from home";
-      const tripsLine = n ? `<br>${plural(n, "round trip")} via here${via === s.id ? " (filtered)" : " · click to filter"}` : "";
+      const tripsLine = n ? `<br>${plural(n, "round trip")} via here${via === s.id ? " (filtered)" : ""}` : "";
       const source = providersInData.length > 1 ? ` · ${esc(providerName(providerById.get(s.id)))}` : "";
-      marker.bindTooltip(`<strong>${esc(s.name)}</strong>${source}<br>${where}${tripsLine}`, { direction: "top", offset: [0, -6] });
-      if (n) marker.on("click", () => setVia(via === s.id ? null : s.id));
+      marker.bindTooltip(
+        `<strong>${esc(s.name)}</strong>${source}<br>${where}${tripsLine}<br><span class="tip-hint">Click for options</span>`,
+        { direction: "top", offset: [0, -6] }
+      );
+      marker.bindPopup(() => stationMenu(s, n), { closeButton: false, className: "station-popup", offset: [0, -4] });
+      marker.on("popupopen", () => marker.getTooltip().setOpacity(0)); // the menu says it all
+      marker.on("popupclose", () => marker.getTooltip().setOpacity(0.9));
       marker.addTo(layers.stations);
     }
+  }
+
+  // The menu a click on a station opens: make it the home station, or list only the trips that stop there.
+  function stationMenu(s, viaCount) {
+    const target = homeFor(s);
+    const count = homeCounts.get(target.id);
+    const asHome = count === undefined ? "counting…" : plural(count, "round trip");
+    const source = providersInData.length > 1 ? ` · ${esc(providerName(providerById.get(s.id)))}` : "";
+    const lines = [`<p><strong>${esc(s.name)}</strong>${source}</p>`];
+    if (target.id === settings.home) {
+      lines.push("<p>Your home station</p>");
+    } else {
+      const who = target.id === s.id ? "As home" : `${esc(target.name)} as home`;
+      lines.push(`<p>${who}: ${asHome}</p>`);
+      lines.push(`<button type="button" data-action="home">Set ${target.id === s.id ? "" : esc(target.name) + " "}as home</button>`);
+    }
+    if (via === s.id) lines.push('<button type="button" data-action="via">Show all trips again</button>');
+    else if (viaCount) lines.push(`<button type="button" data-action="via">Trips via ${esc(s.name)} (${viaCount})</button>`);
+
+    const el = document.createElement("div");
+    el.className = "station-menu";
+    el.innerHTML = lines.join("");
+    el.addEventListener("click", (e) => {
+      const action = e.target.closest("button")?.dataset.action;
+      if (!action) return;
+      map.closePopup();
+      if (action === "home") setHome(target.id);
+      else setVia(via === s.id ? null : s.id);
+    });
+    return el;
   }
 
   function fitOverview() {

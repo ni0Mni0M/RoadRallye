@@ -469,6 +469,34 @@ input[type="range"] { width: 100%; margin: 4px 0; accent-color: var(--text); }
 .leaflet-tooltip-right::before { border-right-color: var(--panel); }
 
 .stop-label { font-weight: 600; padding: 3px 8px; }
+.tip-hint { color: var(--muted); font-size: 12px; }
+
+/* The menu a click on a station opens */
+.station-popup .leaflet-popup-content-wrapper,
+.station-popup .leaflet-popup-tip {
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.2);
+}
+.station-popup .leaflet-popup-content-wrapper { border: 1px solid var(--line); border-radius: 10px; }
+.station-popup .leaflet-popup-content { margin: 10px 12px; font-size: 13px; line-height: 1.4; min-width: 170px; }
+.station-menu p { margin: 0 0 4px; color: var(--muted); }
+.station-menu p:first-child { color: var(--text); }
+.station-menu button {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  font: inherit;
+  font-weight: 500;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+.station-menu button:hover { border-color: var(--muted); }
+.station-menu button[data-action="home"] { border-color: var(--out); }
 
 .leaflet-control-zoom a, .leaflet-control-attribution {
   background: var(--panel) !important;

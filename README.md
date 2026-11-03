@@ -20,7 +20,7 @@ but the map background may stay blank because OpenStreetMap only serves tiles to
 
 | Filter | Meaning |
 | --- | --- |
-| Home | The station the radii are measured from |
+| Home | The station the radii are measured from. The number after each station, e.g. "Berlin (17)", is how many round trips it would have with the other filters as they are now |
 | Start within | The first rally must start this close to home (0 = the home station only) |
 | Return within | The last rally must end this close to home |
 | Earliest pickup / Back by | The whole trip must fit between these dates |
@@ -35,7 +35,9 @@ stations that lines up with the other two. A bigger start radius, more waiting d
 hop finds more of them.
 
 Click a trip to see it animated on the map; **Play all** cycles through the list.
-Click a green station on the map to list only trips that stop there. Each leg has a **Book** link
+Click a station on the map for a small menu: **Set as home** (with how many round trips you'd get
+from there) and, for the green stations, **Trips via ...** to list only trips that stop there.
+An Imoova city next to a roadsurfer station sets that roadsurfer station as home. Each leg has a **Book** link
 that opens the provider's booking page for exactly that rally. Settings are remembered in the browser.
 
 ## Providers
