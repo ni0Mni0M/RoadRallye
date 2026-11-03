@@ -1,7 +1,7 @@
 // Run with: node --test tests/matching.test.js
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { findRoundTrips, haversineKm, daysBetween, addDays } = require("../web/matching.js");
+const { findRoundTrips, haversineKm, daysBetween, addDays, SAME_PLACE_KM } = require("../web/matching.js");
 
 const BERLIN = { lat: 52.5200, lon: 13.4050 };
 
@@ -14,6 +14,8 @@ const stations = [
   { id: 1, name: "Munich", lat: 48.204, lon: 11.586 },
   { id: 20, name: "Madrid", lat: 40.395, lon: -3.581 },
   { id: 17, name: "Barcelona", lat: 41.3208, lon: 2.03 },
+  { id: 48, name: "Antwerp-Port", lat: 51.23, lon: 4.42 }, // ~11 km from the Antwerp station
+  { id: "imoova-1", provider: "imoova", name: "Antwerp", lat: 51.2194, lon: 4.4025 }, // city centre, ~10 km away
 ];
 
 const rally = (from, to, pickup, ret) => ({ from, to, pickup, return: ret });
@@ -187,4 +189,33 @@ test("hops work between every pair of legs", () => {
   assert.equal(trips.length, 1);
   assert.equal(trips[0].hops[0], 0);
   assert.ok(trips[0].hops[1] > 20 && trips[0].hops[1] < 50);
+});
+
+test("another provider's station in the same city connects without a train hop", () => {
+  const [trip, ...rest] = find([
+    rally(51, 47, "2026-11-03", "2026-11-10"),
+    rally("imoova-1", 3, "2026-11-10", "2026-11-17"), // Imoova from Antwerp city centre
+  ]);
+  assert.equal(rest.length, 0);
+  assert.equal(last(trip).from, "imoova-1");
+  assert.ok(trip.hops[0] > 5 && trip.hops[0] < SAME_PLACE_KM);
+});
+
+test("nearby stations of the same provider still need a train hop", () => {
+  const rallies = [
+    rally(51, 47, "2026-11-03", "2026-11-10"),
+    rally(48, 3, "2026-11-10", "2026-11-17"), // from Antwerp-Port, ~11 km away
+  ];
+  assert.equal(find(rallies).length, 0);
+  assert.equal(find(rallies, { hopRadiusKm: 20 }).length, 1);
+});
+
+test("offers that differ only in the return date are separate trips", () => {
+  const trips = find([
+    rally(51, 47, "2026-11-03", "2026-11-10"),
+    rally(47, 3, "2026-11-10", "2026-11-16"),
+    rally(47, 3, "2026-11-10", "2026-11-17"),
+  ]);
+  assert.equal(trips.length, 2);
+  assert.notEqual(trips[0].id, trips[1].id);
 });

@@ -1,4 +1,4 @@
-// Round-trip matching for roadsurfer rallies.
+// Round-trip matching for one-way rallies (roadsurfer, Imoova).
 // Works as a plain <script> in the browser (window.RallyMatching) and as a Node module (tests).
 (function (root, factory) {
   if (typeof module === "object" && module.exports) module.exports = factory();
@@ -8,6 +8,9 @@
 
   const EARTH_RADIUS_KM = 6371;
   const DAY_MS = 86400000;
+  // Stations of different providers this close together count as one place, even with train hops off:
+  // Imoova only gives city centres, up to ~30 km from the roadsurfer station in the same city (Milan, Dallas).
+  const SAME_PLACE_KM = 30;
 
   function haversineKm(a, b) {
     const rad = Math.PI / 180;
@@ -50,7 +53,8 @@
    *   home            {lat, lon}
    *   startRadiusKm   first rally must start this close to home
    *   returnRadiusKm  last rally must end this close to home
-   *   hopRadiusKm     a rally may start this far from where the previous one ended (0 = same station)
+   *   hopRadiusKm     a rally may start this far from where the previous one ended (0 = same station,
+   *                   or another provider's station within SAME_PLACE_KM)
    *   earliest        first allowed pickup date ("YYYY-MM-DD")
    *   latest          last allowed return date ("YYYY-MM-DD")
    *   maxWaitDays     days allowed between one drop-off and the next pickup
@@ -86,8 +90,10 @@
         const here = stations.get(id);
         const list = [];
         for (const startId of byStart.keys()) {
-          const km = startId === id ? 0 : haversineKm(here, stations.get(startId));
-          if (km <= opts.hopRadiusKm) list.push({ id: startId, km });
+          const there = stations.get(startId);
+          const km = startId === id ? 0 : haversineKm(here, there);
+          const samePlace = km <= SAME_PLACE_KM && (here.provider || "") !== (there.provider || "");
+          if (km <= opts.hopRadiusKm || samePlace) list.push({ id: startId, km });
         }
         hopCache.set(id, list);
       }
@@ -108,7 +114,7 @@
           const nextHops = [...hops, hop.km];
           if (homeKm.get(next.to) <= opts.returnRadiusKm) {
             trips.push({
-              id: nextLegs.map((r) => `${r.from}-${r.to}-${r.pickup}`).join("_"),
+              id: nextLegs.map((r) => `${r.from}-${r.to}-${r.pickup}-${r.return}`).join("_"),
               legs: nextLegs,
               waits: nextWaits,
               hops: nextHops,
@@ -138,5 +144,5 @@
     return trips;
   }
 
-  return { haversineKm, daysBetween, addDays, findRoundTrips };
+  return { SAME_PLACE_KM, haversineKm, daysBetween, addDays, findRoundTrips };
 });

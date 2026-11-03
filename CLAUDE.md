@@ -23,6 +23,6 @@ tweaks can go straight to `main`.
 
 ## Project notes
 
-- Tests: `node --test tests/matching.test.js tests/wayhome.test.js`
+- Tests: `node --test tests/matching.test.js tests/wayhome.test.js` and `python -m unittest discover -s tests`
 - Never commit `config.local.json` (the user's contact for Transitous) or `web/data/`.
 - Commits use the repo-local identity `RoadRalley <roadralley@users.noreply.github.com>`.

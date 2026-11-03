@@ -1,14 +1,15 @@
 # Rally round trips
 
-Finds round trips made of two or three roadsurfer rallies (one-way relocation rentals): one rally
-from near home to somewhere far away, optionally a second rally onward to another far-away
-station, then a last rally back to a station near home. Results are shown on a web page with a
-map that animates each trip.
+Finds round trips made of two or three one-way relocation rentals ("rallies") from roadsurfer
+and Imoova: one rally from near home to somewhere far away, optionally a second rally onward to
+another far-away station, then a last rally back to a station near home. Results are shown on a
+web page with a map that animates each trip.
 
 ## Use it
 
 1. **Get fresh data:** double-click `update-data.bat`. It downloads every current rally
    (about 4–5 minutes, a few hundred small requests at a slow pace) into `web/data/`.
+   `python scraper\fetch_rallies.py --source imoova` updates only one source (seconds for Imoova).
 2. **Open the site:** double-click `open-site.bat`. It starts a small local web server and opens
    <http://localhost:8765>. Close the black window to stop it.
 
@@ -25,7 +26,8 @@ but the map background may stay blank because OpenStreetMap only serves tiles to
 | Earliest pickup / Back by | The whole trip must fit between these dates |
 | Rallies per trip | 2, 2 or 3, or only 3. In a three-rally trip the middle rally must also end outside the return area (otherwise you'd already be home) |
 | Wait between legs | Days allowed between dropping off one van and picking up the next |
-| Train hop between rallies | Lets the next rally start from a different station this far from where the previous one ended (e.g. arrive in Antwerp, take the train to Brussels) |
+| Train hop between rallies | Lets the next rally start from a different station this far from where the previous one ended (e.g. arrive in Antwerp, take the train to Brussels). A roadsurfer station and an Imoova city less than 30 km apart always count as the same place ("Across town") |
+| Rentals from | Which providers to use: roadsurfer, Imoova or both |
 | Way home | Adds a "Getting home" panel to the selected trip, from the last drop-off to your home station (see below) |
 
 Three-rally trips are rare with tight settings, because they need a rally between two far-away
@@ -34,7 +36,20 @@ hop finds more of them.
 
 Click a trip to see it animated on the map; **Play all** cycles through the list.
 Click a green station on the map to list only trips that stop there. Each leg has a **Book** link
-that opens roadsurfer's booking page for exactly that rally. Settings are remembered in the browser.
+that opens the provider's booking page for exactly that rally. Settings are remembered in the browser.
+
+## Providers
+
+| | roadsurfer | Imoova |
+| --- | --- | --- |
+| What | roadsurfer's own rallies | A marketplace where many rental companies (Indie Campers, McRent, Siesta, roadsurfer USA, ...) list relocations |
+| Dates | Fixed pickup and return day | Pick up on any day of a window, then a number of free days. Each possible pickup day is listed as its own rally, returned when the free days end. Extra paid days are not shown |
+| Places | Stations with exact addresses | City centres; the depot address comes with the booking |
+| Price | Not in the data (usually from €129) | Shown on each leg: booking fee plus the daily rate for the free days. Fuel, bond and extra days come on top |
+| Coverage today | Europe and North America | Europe (few offers outside spring and autumn, none from Germany in November) and the USA |
+
+roadsurfer USA also lists vans on Imoova. When roadsurfer has a rally on the same route around the
+same days, only the rally is kept; the others are shown as "Imoova (roadsurfer van)".
 
 ## Way home
 
@@ -89,25 +104,29 @@ The rules for this are in `CLAUDE.md`.
 
 ## How it works
 
-- `scraper/fetch_rallies.py` calls the JSON endpoints behind `booking.roadsurfer.com/rally`:
-  the station list, each station's rally destinations, and each route's date windows. Each
-  request needs an `X-Requested-Alias` header naming the endpoint. The result is saved as
-  `web/data/rallies.json` and `web/data/rallies.js`. A failed run leaves the old data in place.
+- `scraper/fetch_rallies.py` runs each source and saves the result as `web/data/rallies.json` and
+  `web/data/rallies.js`. When a source fails, its data from the last run is kept and the page
+  says how old it is, so one broken source never empties the page.
+  - `scraper/roadsurfer.py` calls the JSON endpoints behind `booking.roadsurfer.com/rally`: the
+    station list, each station's rally destinations, and each route's date windows. Each request
+    needs an `X-Requested-Alias` header naming the endpoint.
+  - `scraper/imoova.py` asks the GraphQL API behind `imoova.com/deals` for every bookable
+    relocation in Europe and the USA (a handful of requests), plus which of them are roadsurfer's.
 - `web/matching.js` chains rallies into round trips (distances use the stations' coordinates).
+- `web/app.js` draws the filters, the list, and the Leaflet map.
 - `web/wayhome.js` holds the way-home estimates and links; the car route is fetched in `app.js`.
 - `serve.py` serves the site and forwards train and bus searches to Transitous (`/api/transit`).
 
-## License
-
-MIT, see `LICENSE`.
-- `web/app.js` draws the filters, the list, and the Leaflet map.
-
-This is roadsurfer's internal API, not a documented one, so it can change without notice.
-Price and vehicle details are only shown on roadsurfer's booking page; rallies are usually
-advertised from €129.
+Both are internal APIs, not documented ones, so they can change without notice. Vehicle details
+are only shown on the providers' booking pages.
 
 ## Tests
 
 ```bat
 node --test tests/matching.test.js tests/wayhome.test.js
+python -m unittest discover -s tests
 ```
+
+## License
+
+MIT, see `LICENSE`.

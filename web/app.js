@@ -8,7 +8,23 @@
 
   const STORAGE_KEY = "rally-finder-settings-v1";
   const PAGE_SIZE = 100;
-  const BOOK_URL = "https://booking.roadsurfer.com/rally/pick";
+  // Where each provider's rallies are booked. Stations saved before Imoova was added have no provider: roadsurfer.
+  const PROVIDERS = {
+    roadsurfer: {
+      name: "roadsurfer",
+      unit: "rallies",
+      note: "Rallies, usually from €129",
+      book: (r) =>
+        "https://booking.roadsurfer.com/rally/pick" +
+        `?station=${r.from}&end_station=${r.to}&pickup_date=${r.pickup}&return_date=${r.return}&currency=EUR`,
+    },
+    imoova: {
+      name: "Imoova",
+      unit: "relocations",
+      note: "Many rental companies, €1 a day plus a booking fee",
+      book: (r) => `https://www.imoova.com/en/relocations/${encodeURIComponent(r.ref)}`,
+    },
+  };
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   const css = getComputedStyle(document.documentElement);
@@ -30,6 +46,15 @@
   const esc = (s) =>
     String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  function fmtPrice(amount, currency) {
+    try {
+      const opts = { style: "currency", currency, minimumFractionDigits: 0, maximumFractionDigits: 0 };
+      return new Intl.NumberFormat("en-GB", opts).format(amount);
+    } catch (e) {
+      return `${Math.round(amount)} ${currency}`; // unknown currency code
+    }
+  }
 
   // "4 h 55 min", rounded to 5 minutes since every duration here is an estimate.
   function fmtDuration(min) {
@@ -123,11 +148,24 @@
   const stations = new Map(
     data.stations.filter((s) => typeof s.lat === "number" && typeof s.lon === "number").map((s) => [s.id, s])
   );
+  const providerById = new Map(data.stations.map((s) => [s.id, s.provider || "roadsurfer"]));
+  const providerOf = (r) => providerById.get(r.from) || "roadsurfer";
+  const providerName = (p) => (PROVIDERS[p] ? PROVIDERS[p].name : p);
+  const present = new Set(data.rallies.map(providerOf));
+  const providersInData = [...Object.keys(PROVIDERS).filter((p) => present.has(p)), ...[...present].filter((p) => !PROVIDERS[p])];
+
+  // Imoova's city centres are often a few km from a roadsurfer station: the home list keeps only the roadsurfer one.
+  const roadsurferStations = [...stations.values()].filter((s) => providerById.get(s.id) === "roadsurfer");
+  const homeChoices = [...stations.values()].filter(
+    (s) => providerById.get(s.id) === "roadsurfer" || !roadsurferStations.some((o) => M.haversineKm(s, o) <= M.SAME_PLACE_KM)
+  );
+  const homeById = new Map(homeChoices.map((s) => [String(s.id), s.id])); // <select> values are strings
+
   const today = localToday();
-  const berlin = [...stations.values()].find((s) => s.name === "Berlin");
+  const berlin = homeChoices.find((s) => s.name === "Berlin");
 
   const DEFAULTS = {
-    home: (berlin || stations.values().next().value).id,
+    home: (berlin || homeChoices[0]).id,
     startRadius: 50,
     returnRadius: 400,
     earliest: today,
@@ -141,6 +179,7 @@
     dropoffTime: "12:00",
     carConsumption: 7,
     fuelPrice: 1.8,
+    hideProviders: [],
   };
   const TIME_OF_DAY = /^\d\d:\d\d$/;
   const LEG_CHOICES = ["2", "2-3", "3"];
@@ -154,7 +193,8 @@
       saved = {};
     }
     const s = { ...DEFAULTS, ...saved };
-    if (!stations.has(s.home)) s.home = DEFAULTS.home;
+    if (!homeById.has(String(s.home))) s.home = DEFAULTS.home;
+    if (!Array.isArray(s.hideProviders)) s.hideProviders = [];
     if (!LEG_CHOICES.includes(s.legs)) s.legs = DEFAULTS.legs;
     if (!HOME_MODES.includes(s.homeMode)) s.homeMode = DEFAULTS.homeMode;
     s.wayHome = s.wayHome === true;
@@ -188,7 +228,7 @@
   function fillHomeSelect() {
     const regions = new Intl.DisplayNames(["en"], { type: "region" });
     const byCountry = new Map();
-    for (const s of stations.values()) {
+    for (const s of homeChoices) {
       const country = s.country ? regions.of(s.country) : "Other";
       if (!byCountry.has(country)) byCountry.set(country, []);
       byCountry.get(country).push(s);
@@ -206,22 +246,38 @@
       .join("");
   }
 
+  // One checkbox per provider, shown only when the data has more than one.
+  function fillProviders() {
+    $("providerSet").hidden = providersInData.length < 2;
+    $("providers").innerHTML = providersInData
+      .map((p) => {
+        const note = PROVIDERS[p] ? `<small>${esc(PROVIDERS[p].note)}</small>` : "";
+        return `<label class="check"><input type="checkbox" value="${esc(p)}"><span>${esc(providerName(p))}${note}</span></label>`;
+      })
+      .join("");
+  }
+
+  const providerBoxes = () => [...$("providers").querySelectorAll("input")];
+
   const FIELDS = [
     "home", "startRadius", "returnRadius", "earliest", "latest", "maxWait", "hopRadius", "sort",
     "dropoffTime", "carConsumption", "fuelPrice",
   ];
-  const NUMERIC = new Set(["home", "startRadius", "returnRadius", "maxWait", "hopRadius", "carConsumption", "fuelPrice"]);
+  const NUMERIC = new Set(["startRadius", "returnRadius", "maxWait", "hopRadius", "carConsumption", "fuelPrice"]);
 
   function writeForm() {
     for (const key of FIELDS) $(key).value = settings[key];
     $("filters").elements.legs.value = settings.legs;
     $("wayHome").checked = settings.wayHome;
+    for (const box of providerBoxes()) box.checked = !settings.hideProviders.includes(box.value);
     updateOutputs();
   }
 
   function readForm() {
     const next = {};
     for (const key of FIELDS) next[key] = NUMERIC.has(key) ? Number($(key).value) : $(key).value;
+    next.home = homeById.get(next.home);
+    next.hideProviders = providerBoxes().filter((box) => !box.checked).map((box) => box.value);
     next.legs = $("filters").elements.legs.value;
     next.wayHome = $("wayHome").checked;
     next.homeMode = settings.homeMode; // chosen with the tabs in the trip card, not the form
@@ -259,9 +315,11 @@
     else if (settings.latest < settings.earliest) error = "The back-by date is before the earliest pickup.";
     $("dateError").textContent = error;
 
+    const hidden = new Set(settings.hideProviders);
+    const rallies = hidden.size ? data.rallies.filter((r) => !hidden.has(providerOf(r))) : data.rallies;
     allTrips = error
       ? []
-      : M.findRoundTrips(data, {
+      : M.findRoundTrips({ stations: data.stations, rallies }, {
           home: stations.get(settings.home),
           startRadiusKm: settings.startRadius,
           returnRadiusKm: settings.returnRadius,
@@ -301,9 +359,6 @@
 
   // ---------- List ----------
 
-  const bookUrl = (r) =>
-    `${BOOK_URL}?station=${r.from}&end_station=${r.to}&pickup_date=${r.pickup}&return_date=${r.return}&currency=EUR`;
-
   function timelineHtml(t) {
     const span = Math.max(1, M.daysBetween(settings.earliest, settings.latest));
     const seg = (cls, from, to) => {
@@ -319,17 +374,30 @@
     return `<div class="timeline" aria-hidden="true">${parts.join("")}</div>`;
   }
 
+  // Imoova prices are the booking fee plus the daily rate for the free days; fuel, bond and extra days come on top.
   function legHtml(kind, r) {
     const a = stations.get(r.from);
     const b = stations.get(r.to);
+    const p = providerOf(r);
+    const source =
+      esc(providerName(p)) +
+      (r.supplier ? ` (${esc(r.supplier)} van)` : "") +
+      (typeof r.price === "number" ? ` · ${fmtPrice(r.price, r.currency)}` : "");
+    const book = PROVIDERS[p]
+      ? `<a class="book" href="${esc(PROVIDERS[p].book(r))}" target="_blank" rel="noopener" ` +
+        `aria-label="Book ${esc(a.name)} to ${esc(b.name)} on ${esc(providerName(p))}">Book ↗</a>`
+      : "";
     return (
       `<div class="leg ${kind}">` +
       '<span class="leg-dot" aria-hidden="true"></span>' +
       '<div class="leg-text">' +
       `<span class="leg-dates">${fmtDay(r.pickup)} → ${fmtDay(r.return)}</span>` +
-      `<span class="leg-stations">${esc(a.name)} → ${esc(b.name)} · ${plural(M.daysBetween(r.pickup, r.return), "day")}</span>` +
+      '<span class="leg-stations">' +
+      `<span class="leg-route">${esc(a.name)} → ${esc(b.name)} · ${plural(M.daysBetween(r.pickup, r.return), "day")}</span>` +
+      `<span class="leg-source">&nbsp;· ${source}</span>` +
+      "</span>" +
       "</div>" +
-      `<a class="book" href="${bookUrl(r)}" target="_blank" rel="noopener" aria-label="Book ${esc(a.name)} to ${esc(b.name)} on roadsurfer">Book ↗</a>` +
+      book +
       "</div>"
     );
   }
@@ -341,7 +409,9 @@
     const wait = t.waits[i];
     if (arrive.id !== depart.id) {
       const when = wait ? `, ${plural(wait, "day")} later` : ", same day";
-      return `<p class="between">Train ${esc(arrive.name)} → ${esc(depart.name)} (${fmtKm(t.hops[i])})${when}</p>`;
+      const acrossTown = t.hops[i] <= M.SAME_PLACE_KM && providerById.get(arrive.id) !== providerById.get(depart.id);
+      const how = acrossTown ? "Across town" : "Train";
+      return `<p class="between">${how} ${esc(arrive.name)} → ${esc(depart.name)} (${fmtKm(t.hops[i])})${when}</p>`;
     }
     return wait ? `<p class="between">${plural(wait, "day")} in ${esc(arrive.name)}</p>` : "";
   }
@@ -476,7 +546,9 @@
       for (const id of stopsOf(t)) viaCounts.set(id, (viaCounts.get(id) || 0) + 1);
     }
 
+    const hidden = new Set(settings.hideProviders);
     for (const s of stations.values()) {
+      if (hidden.has(providerById.get(s.id))) continue;
       const km = M.haversineKm(home, s);
       const role = km <= settings.startRadius ? "out" : km <= settings.returnRadius ? "back" : "far";
       const n = viaCounts.get(s.id) || 0;
@@ -490,7 +562,8 @@
       });
       const where = role === "out" ? "Start area" : role === "back" ? "Return area" : fmtKm(km) + " from home";
       const tripsLine = n ? `<br>${plural(n, "round trip")} via here${via === s.id ? " (filtered)" : " · click to filter"}` : "";
-      marker.bindTooltip(`<strong>${esc(s.name)}</strong><br>${where}${tripsLine}`, { direction: "top", offset: [0, -6] });
+      const source = providersInData.length > 1 ? ` · ${esc(providerName(providerById.get(s.id)))}` : "";
+      marker.bindTooltip(`<strong>${esc(s.name)}</strong>${source}<br>${where}${tripsLine}`, { direction: "top", offset: [0, -6] });
       if (n) marker.on("click", () => setVia(via === s.id ? null : s.id));
       marker.addTo(layers.stations);
     }
@@ -979,16 +1052,31 @@
 
   // ---------- Start ----------
 
-  const fetched = new Date(data.fetched_at);
-  const ageDays = (Date.now() - fetched.getTime()) / 86400000;
-  const when = fetched.toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  // Data saved before Imoova was added has one fetched_at and no sources.
+  const sources = data.sources || { roadsurfer: { fetched_at: data.fetched_at } };
+  const offers = new Map(); // provider -> distinct offers (one Imoova relocation covers many pickup days)
+  for (const r of data.rallies) {
+    const p = providerOf(r);
+    if (!offers.has(p)) offers.set(p, new Set());
+    offers.get(p).add(r.ref ?? `${r.from}-${r.to}-${r.pickup}`);
+  }
+  const counts = providersInData.map((p) => {
+    const n = offers.get(p).size.toLocaleString("en-GB");
+    return PROVIDERS[p] ? `${n} ${PROVIDERS[p].name} ${PROVIDERS[p].unit}` : `${n} from ${esc(p)}`;
+  });
+  const problems = Object.entries(sources).flatMap(([p, info]) => {
+    const ageDays = (Date.now() - new Date(info.fetched_at).getTime()) / 86400000;
+    const old = ageDays > 1 ? `${plural(Math.floor(ageDays), "day")} old` : "";
+    if (info.error) return [`${esc(providerName(p))} didn't answer on the last update${old ? `, its data is ${old}` : ""}.`];
+    return old ? [`The ${esc(providerName(p))} data is ${old}.`] : [];
+  });
+  const when = new Date(data.fetched_at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
   $("dataInfo").innerHTML =
-    `${data.rallies.length.toLocaleString("en-GB")} rallies · updated ${esc(when)}` +
-    (ageDays > 1
-      ? `<span class="stale">This data is ${plural(Math.floor(ageDays), "day")} old. Run update-data.bat for fresh rallies.</span>`
-      : "");
+    `${counts.join(" · ")} · updated ${esc(when)}` +
+    (problems.length ? `<span class="stale">${problems.join(" ")} Run update-data.bat for fresh rallies.</span>` : "");
 
   fillHomeSelect();
+  fillProviders();
   writeForm();
   compute();
 })();
