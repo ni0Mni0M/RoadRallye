@@ -290,7 +290,7 @@ input[type="range"] { width: 100%; margin: 4px 0; accent-color: var(--text); }
 .wayhome h4 { margin: 0; font-size: 14px; font-weight: 600; }
 .wh-sub { margin: 2px 0 10px; font-size: 12.5px; color: var(--muted); }
 
-.wh-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.wh-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
 
 .wh-tab {
   display: flex;
@@ -316,19 +316,6 @@ input[type="range"] { width: 100%; margin: 4px 0; accent-color: var(--text); }
 .wh-main { margin: 0; font-size: 14px; font-weight: 600; }
 .wh-detail { margin: 4px 0 0; font-size: 12.5px; color: var(--muted); }
 .wh-credit { margin: 6px 0 0; font-size: 11.5px; color: var(--muted); }
-
-.wh-warn {
-  margin: 6px 0 0;
-  padding: 4px 8px;
-  border-radius: 6px;
-  font-size: 12.5px;
-  background: var(--warn-bg);
-  color: var(--warn);
-}
-
-.wh-steps { list-style: none; margin: 8px 0 0; padding: 0; font-size: 13px; }
-.wh-steps li { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; border-bottom: 1px solid var(--soft); }
-.wh-steps li span:last-child { color: var(--muted); white-space: nowrap; }
 
 .wh-links { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .wh-credit a { color: inherit; }

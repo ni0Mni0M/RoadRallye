@@ -38,14 +38,13 @@ that opens roadsurfer's booking page for exactly that rally. Settings are rememb
 
 ## Way home
 
-Tick **Plan how to get home** and select a trip. The panel compares three ways back from the
+Tick **Plan how to get home** and select a trip. The panel compares two ways back from the
 last drop-off, and the chosen one is drawn on the map as a dashed line:
 
 | Mode | What you get |
 | --- | --- |
 | Train & bus | Live connections from [Transitous](https://transitous.org/) leaving after your drop-off time: departure, arrival, changes and lines (e.g. RE30 · ICE 798 · S15). Pick one to see it on the map. Without the local server or a contact it falls back to a rough estimate from the distance. |
 | Car | The real road route from the free OSRM server: distance, driving time without traffic, and fuel cost from your consumption and fuel price |
-| Plane | The best-connected airports at both ends, a door-to-door estimate (getting to the airport, 2 h at airports, flight, getting home), and Skyscanner / Google Flights search links. It can't tell whether a flight actually runs that day. |
 
 ### Live train and bus times (Transitous)
 
@@ -79,9 +78,6 @@ Unregister-ScheduledTask -TaskName "Rally data update"
   the station list, each station's rally destinations, and each route's date windows. Each
   request needs an `X-Requested-Alias` header naming the endpoint. The result is saved as
   `web/data/rallies.json` and `web/data/rallies.js`. A failed run leaves the old data in place.
-- `scraper/fetch_airports.py` saves airports with scheduled flights near the stations
-  (OurAirports, ranked by connections from the OpenFlights route list). `update-data.bat` runs it
-  only when `web/data/airports.js` is missing.
 - `web/matching.js` chains rallies into round trips (distances use the stations' coordinates).
 - `web/wayhome.js` holds the way-home estimates and links; the car route is fetched in `app.js`.
 - `serve.py` serves the site and forwards train and bus searches to Transitous (`/api/transit`).

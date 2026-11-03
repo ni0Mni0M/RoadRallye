@@ -4,7 +4,6 @@
   const M = window.RallyMatching;
   const W = window.WayHome;
   const data = window.RALLY_DATA;
-  const airports = window.AIRPORT_DATA || null;
   const $ = (id) => document.getElementById(id);
 
   const STORAGE_KEY = "rally-finder-settings-v1";
@@ -145,7 +144,7 @@
   };
   const TIME_OF_DAY = /^\d\d:\d\d$/;
   const LEG_CHOICES = ["2", "2-3", "3"];
-  const HOME_MODES = ["transit", "car", "plane"];
+  const HOME_MODES = ["transit", "car"];
 
   function loadSettings() {
     let saved = {};
@@ -763,46 +762,7 @@
     );
   }
 
-  function planeHtml(end, plane, drive, date) {
-    if (plane.reason === "noData") {
-      return '<p class="wh-detail">Airport data is missing. Run update-data.bat once to download it.</p>';
-    }
-    if (plane.reason === "noAirport") {
-      return (
-        '<p class="wh-main">No airport nearby</p>' +
-        `<p class="wh-detail">There's no airport with scheduled flights within 200 km of ${esc(end.name)} or of home.</p>`
-      );
-    }
-    if (plane.reason === "sameAirport") {
-      return (
-        "<p class=\"wh-main\">Flying doesn't help</p>" +
-        `<p class="wh-detail">${esc(end.name)} and home have the same nearest airport.</p>`
-      );
-    }
-    let warn = "";
-    if (plane.tooShort) warn = '<p class="wh-warn">Under 300 km, a flight rarely saves time.</p>';
-    else if (drive && !drive.error && plane.totalMin >= drive.min) warn = '<p class="wh-warn">Probably no faster than driving.</p>';
-    const others = plane.depAlternatives.map((a) => a.iata).join(", ");
-    const step = (text, min) => `<li><span>${text}</span><span>${fmtDuration(min)}</span></li>`;
-    return (
-      `<p class="wh-main">About ${fmtDuration(plane.totalMin)} door to door · ${esc(plane.dep.iata)} → ${esc(plane.arr.iata)}</p>` +
-      warn +
-      '<ol class="wh-steps">' +
-      step(`To ${esc(plane.dep.name)} (${fmtKm(plane.dep.km)})`, plane.toAirportMin) +
-      step("Check-in, security, boarding, bags", plane.airportMin) +
-      step(`Flight, ${fmtKm(plane.flightKm)}`, plane.flightMin) +
-      step(`From ${esc(plane.arr.name)} home (${fmtKm(plane.arr.km)})`, plane.fromAirportMin) +
-      "</ol>" +
-      `<p class="wh-detail">An estimate: it can't tell whether this route has flights that day.` +
-      `${others ? ` Other airports near ${esc(end.name)}: ${esc(others)}.` : ""}</p>` +
-      '<div class="wh-links">' +
-      extLink(W.skyscannerUrl(plane.dep.iata, plane.arr.iata, date), "Skyscanner") +
-      extLink(W.googleFlightsUrl(plane.dep.iata, plane.arr.iata, date), "Google Flights") +
-      "</div>"
-    );
-  }
-
-  function drawWayHome(mode, end, home, drive, plane, connection) {
+  function drawWayHome(mode, end, home, drive, connection) {
     const at = (p) => [p.lat, p.lon];
     const line = (pts, dashArray, weight = 3) =>
       L.polyline(pts, { pane: "wayhome", color: COLORS.ink, weight, opacity: 0.75, dashArray, lineCap: "round", interactive: false })
@@ -817,15 +777,6 @@
       }
     } else if (mode === "car" && drive && !drive.error) {
       line(drive.path, "8 6");
-    } else if (mode === "plane" && !plane.reason) {
-      line([at(end), at(plane.dep)], "1 6", 2.5);
-      line(arc(plane.dep, plane.arr, 0.12), "8 6");
-      line([at(plane.arr), at(home)], "1 6", 2.5);
-      for (const a of [plane.dep, plane.arr]) {
-        L.circleMarker(at(a), { pane: "wayhome", radius: 5, color: COLORS.panel, weight: 2, fillColor: COLORS.ink, fillOpacity: 1 })
-          .bindTooltip(`${esc(a.iata)} · ${esc(a.name)}`, { direction: "top", offset: [0, -4] })
-          .addTo(layers.wayHome);
-      }
     } else {
       line([at(end), at(home)], "1 6", 2.5);
     }
@@ -865,15 +816,11 @@
     const chosen = liveOk ? itineraryChoice.get(tKey) : -1;
 
     const transit = W.transitEstimate(end, home);
-    const plane = airports ? W.planeEstimate(end, home, airports) : { reason: "noData" };
     const mode = settings.homeMode;
 
     const tab = (m, label, summary) =>
       `<button type="button" role="tab" class="wh-tab" data-mode="${m}" aria-selected="${m === mode}">${label}<span>${summary}</span></button>`;
-    const body =
-      mode === "car" ? carHtml(end, home, drive)
-        : mode === "plane" ? planeHtml(end, plane, drive, date)
-          : transitHtml(end, home, transit, live, chosen);
+    const body = mode === "car" ? carHtml(end, home, drive) : transitHtml(end, home, transit, live, chosen);
     const transitSummary = !live
       ? "…"
       : liveOk ? fmtDuration(live.options[W.fastestIndex(live.options)].durationMin) : fmtRange(transit.lowMin, transit.highMin);
@@ -884,10 +831,9 @@
       '<div class="wh-tabs" role="tablist" aria-label="How to get home">' +
       tab("transit", "Train & bus", transitSummary) +
       tab("car", "Car", !drive ? "…" : drive.error ? "–" : fmtDuration(drive.min)) +
-      tab("plane", "Plane", plane.reason ? "–" : `~${fmtDuration(plane.totalMin)}`) +
       "</div>" +
       `<div class="wh-body" role="tabpanel">${body}</div>`;
-    drawWayHome(mode, end, home, drive, plane, liveOk ? live.options[chosen] : null);
+    drawWayHome(mode, end, home, drive, liveOk ? live.options[chosen] : null);
   }
 
   function chooseItinerary(index) {

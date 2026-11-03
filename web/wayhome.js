@@ -1,60 +1,10 @@
-// Estimates and links for getting from the last drop-off back home: train & bus, car, plane.
+// Estimates and links for getting from the last drop-off back home: train & bus, car.
 // Works as a plain <script> in the browser (window.WayHome) and as a Node module (tests).
 (function (root, factory) {
   if (typeof module === "object" && module.exports) module.exports = factory(require("./matching.js"));
   else root.WayHome = factory(root.RallyMatching);
 })(typeof self !== "undefined" ? self : this, function (M) {
   "use strict";
-
-  const AIRPORT_SEARCH_KM = 200;
-  const AIRPORT_TIME_MIN = 120; // check-in, security, boarding, then bags and getting out
-  const SHORT_FLIGHT_KM = 300;
-
-  // Rough door-to-door minutes by road: 30 % detour, 70 km/h average, 10 min to get going.
-  const groundMin = (km) => ((km * 1.3) / 70) * 60 + 10;
-
-  // Airports near a point, best first. Busy airports win over slightly closer quiet ones,
-  // so Marburg flies from Frankfurt rather than from Kassel, which has hardly any flights.
-  function rankAirports(point, airports) {
-    const penalty = (routes) => (routes >= 100 ? 0 : routes >= 40 ? 30 : routes >= 15 ? 70 : 150);
-    return airports
-      .map((a) => ({ ...a, km: M.haversineKm(point, a) }))
-      .filter((a) => a.km <= AIRPORT_SEARCH_KM)
-      .sort((a, b) => a.km + penalty(a.routes) - (b.km + penalty(b.routes)));
-  }
-
-  /**
-   * Door-to-door estimate for flying from `from` to `to`.
-   * Returns { reason: "noAirport" | "sameAirport" } when flying makes no sense, otherwise
-   * { dep, arr, depAlternatives, arrAlternatives, flightKm, toAirportMin, airportMin, flightMin,
-   *   fromAirportMin, totalMin, tooShort }. dep/arr include `km` from the start/end point.
-   */
-  function planeEstimate(from, to, airports) {
-    const deps = rankAirports(from, airports);
-    const arrs = rankAirports(to, airports);
-    if (!deps.length || !arrs.length) return { reason: "noAirport" };
-    const dep = deps[0];
-    const arr = arrs[0];
-    if (dep.iata === arr.iata) return { reason: "sameAirport" };
-
-    const flightKm = M.haversineKm(dep, arr);
-    const toAirportMin = groundMin(dep.km);
-    const fromAirportMin = groundMin(arr.km);
-    const flightMin = (flightKm / 750) * 60 + 30; // cruise speed plus taxi, climb and descent
-    return {
-      dep,
-      arr,
-      depAlternatives: deps.slice(1, 3),
-      arrAlternatives: arrs.slice(1, 3),
-      flightKm,
-      toAirportMin,
-      airportMin: AIRPORT_TIME_MIN,
-      flightMin,
-      fromAirportMin,
-      totalMin: toAirportMin + AIRPORT_TIME_MIN + flightMin + fromAirportMin,
-      tooShort: flightKm < SHORT_FLIGHT_KM,
-    };
-  }
 
   /**
    * Rough range for train and bus, from straight-line distance only (no timetable).
@@ -138,26 +88,12 @@
     return `https://www.google.com/maps/dir/?api=1&origin=${coords(from)}&destination=${coords(to)}&travelmode=${travelmode}`;
   }
 
-  function skyscannerUrl(depIata, arrIata, isoDate) {
-    const yymmdd = isoDate.slice(2).replace(/-/g, "");
-    return `https://www.skyscanner.net/transport/flights/${depIata.toLowerCase()}/${arrIata.toLowerCase()}/${yymmdd}/`;
-  }
-
-  function googleFlightsUrl(depIata, arrIata, isoDate) {
-    const q = `one way flights from ${depIata} to ${arrIata} on ${isoDate}`;
-    return `https://www.google.com/travel/flights?q=${encodeURIComponent(q)}`;
-  }
-
   return {
-    rankAirports,
-    planeEstimate,
     transitEstimate,
     decodePolyline,
     summarizeItinerary,
     fastestIndex,
     fuelCost,
     googleMapsUrl,
-    skyscannerUrl,
-    googleFlightsUrl,
   };
 });
