@@ -83,22 +83,6 @@ def drop_known_rallies(imoova_part, roadsurfer_part):
     return {**imoova_part, "rallies": rallies, "stations": [s for s in imoova_part["stations"] if s["id"] in used]}
 
 
-def carry_first_seen(data, previous):
-    """Note the day each rally first showed up, so the page can show what's new.
-    Rallies that were already there when tracking started get no date."""
-    today = data["fetched_at"][:10]
-    key = lambda r: (r["from"], r["to"], r["pickup"], r["return"])
-    if previous and previous.get("tracking_since"):
-        seen = {key(r): r.get("first_seen") for r in previous["rallies"]}
-        data["tracking_since"] = previous["tracking_since"]
-        for r in data["rallies"]:
-            r["first_seen"] = seen[key(r)] if key(r) in seen else today
-    else:
-        data["tracking_since"] = today
-        for r in data["rallies"]:
-            r["first_seen"] = None
-
-
 def write_atomic(path, text):
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(text, encoding="utf-8")
@@ -168,7 +152,6 @@ def main():
                 data["rates"] = old["rates"]
 
     args.out.mkdir(parents=True, exist_ok=True)
-    carry_first_seen(data, old)
     body = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
     write_atomic(args.out / "rallies.json", body)
     # Same data as a script, so index.html also works when opened straight from disk.

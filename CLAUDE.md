@@ -23,9 +23,8 @@ tweaks can go straight to `main`.
 
 ## Project notes
 
-- Tests: `node --test tests/matching.test.js tests/wayhome.test.js tests/ranking.test.js` and
-  `python -m unittest discover -s tests`
-- Never commit `config.local.json` (the user's contact for Transitous), `web/data/` or `scraper/cache/`.
+- Tests: `node --test tests/matching.test.js tests/wayhome.test.js` and `python -m unittest discover -s tests`
+- Never commit `config.local.json` (the user's contact for Transitous) or `web/data/`.
 - Commits use the repo-local identity `RoadRalley <roadralley@users.noreply.github.com>`.
 - Currency is always euros. The user sometimes uses a VPN, so websites (and the browser pane) may
   show prices in the currency of the VPN's country, e.g. yen. Convert those to euros, and compare

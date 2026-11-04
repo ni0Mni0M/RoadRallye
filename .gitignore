@@ -9,6 +9,3 @@ web/data/
 
 __pycache__/
 *.tmp
-
-# Downloaded reference data for route scenery (rebuilt by scraper/fetch_route_info.py)
-scraper/cache/
