@@ -17,6 +17,7 @@ from pathlib import Path
 import imoova
 import roadsurfer
 from common import Client, haversine_km
+from rates import fetch_rates
 
 DEFAULT_OUT = Path(__file__).resolve().parent.parent / "web" / "data"
 SOURCES = ["roadsurfer", "imoova"]
@@ -141,6 +142,14 @@ def main():
         "stations": [s for part in parts.values() for s in part["stations"]],
         "rallies": rallies,
     }
+    currencies = {r["currency"] for r in rallies if r.get("currency", "EUR") != "EUR"}
+    if currencies:
+        try:
+            data["rates"] = fetch_rates(currencies)
+        except Exception as e:
+            print(f"Exchange rates failed, keeping the previous ones: {e}", file=sys.stderr)
+            if old and old.get("rates"):
+                data["rates"] = old["rates"]
 
     args.out.mkdir(parents=True, exist_ok=True)
     body = json.dumps(data, ensure_ascii=False, separators=(",", ":"))

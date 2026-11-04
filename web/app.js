@@ -56,6 +56,17 @@
     }
   }
 
+  // Prices are shown in euros. Other currencies are converted at the ECB rate saved with the data
+  // ("≈ €91"), with the listed price in the tooltip; without a rate the listed price is shown.
+  function priceHtml(r) {
+    if (typeof r.price !== "number") return "";
+    const currency = r.currency || "EUR";
+    const rate = currency !== "EUR" && data.rates && data.rates.per_eur[currency];
+    if (!rate) return esc(fmtPrice(r.price, currency));
+    const listed = `${fmtPrice(r.price, currency)} at the ECB rate of ${data.rates.date}`;
+    return `<span title="${esc(listed)}">≈ ${esc(fmtPrice(r.price / rate, "EUR"))}</span>`;
+  }
+
   // "4 h 55 min", rounded to 5 minutes since every duration here is an estimate.
   function fmtDuration(min) {
     const m = Math.max(5, Math.round(min / 5) * 5);
@@ -454,7 +465,7 @@
     const source =
       esc(providerName(p)) +
       (r.supplier ? ` (${esc(r.supplier)} van)` : "") +
-      (typeof r.price === "number" ? ` · ${fmtPrice(r.price, r.currency)}` : "");
+      (typeof r.price === "number" ? ` · ${priceHtml(r)}` : "");
     const book = PROVIDERS[p]
       ? `<a class="book" href="${esc(PROVIDERS[p].book(r))}" target="_blank" rel="noopener" ` +
         `aria-label="Book ${esc(a.name)} to ${esc(b.name)} on ${esc(providerName(p))}">Book ↗</a>`

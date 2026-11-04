@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scraper"))
 
 import imoova  # noqa: E402
 from fetch_rallies import drop_known_rallies, previous_part  # noqa: E402
+from rates import parse_ecb  # noqa: E402
 
 LAS_VEGAS = {"id": "14", "name": "Las Vegas", "state": "US_NV", "lat": 36.1716, "lng": -115.1391}
 MIAMI = {"id": "38", "name": "Miami", "state": "US_FL", "lat": 25.7617, "lng": -80.1918}
@@ -146,6 +147,27 @@ class PreviousPart(unittest.TestCase):
         part = previous_part(old, "imoova")
         self.assertEqual(part["fetched_at"], "2026-11-01T07:00:00Z")
         self.assertEqual(len(part["rallies"]), 1)
+
+
+ECB_SAMPLE = b"""<?xml version="1.0" encoding="UTF-8"?>
+<gesmes:Envelope xmlns:gesmes="http://www.gesmes.org/xml/2002-08-01" xmlns="http://www.ecb.int/vocabulary/2002-08-01/eurofxref">
+  <gesmes:subject>Reference rates</gesmes:subject>
+  <Cube>
+    <Cube time="2026-11-03">
+      <Cube currency="USD" rate="1.1561"/>
+      <Cube currency="GBP" rate="0.8712"/>
+    </Cube>
+  </Cube>
+</gesmes:Envelope>"""
+
+
+class ParseEcb(unittest.TestCase):
+    def test_reads_date_and_rates(self):
+        self.assertEqual(parse_ecb(ECB_SAMPLE), {"date": "2026-11-03", "per_eur": {"USD": 1.1561, "GBP": 0.8712}})
+
+    def test_file_without_rates_fails(self):
+        with self.assertRaises(ValueError):
+            parse_ecb(b"<Envelope><Cube/></Envelope>")
 
 
 if __name__ == "__main__":

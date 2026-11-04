@@ -47,7 +47,7 @@ that opens the provider's booking page for exactly that rally. Settings are reme
 | What | roadsurfer's own rallies | A marketplace where many rental companies (Indie Campers, McRent, Siesta, roadsurfer USA, ...) list relocations |
 | Dates | Fixed pickup and return day | Pick up on any day of a window, then a number of free days. Each possible pickup day is listed as its own rally, returned when the free days end. Extra paid days are not shown |
 | Places | Stations with exact addresses | City centres; the depot address comes with the booking |
-| Price | Not in the data (usually from €129) | Shown on each leg: booking fee plus the daily rate for the free days. Fuel, bond and extra days come on top |
+| Price | Not in the data (usually from €129) | Shown on each leg: booking fee plus the daily rate for the free days. Fuel, bond and extra days come on top. US offers are listed in US$ and shown in euros at the ECB rate of the update day ("≈ €91"); the listed price is in the tooltip |
 | Coverage today | Europe and North America | Europe (few offers outside spring and autumn, none from Germany in November) and the USA |
 
 Each Imoova leg names the rental company whose van it is, e.g. "Imoova (Indie Campers van)". Most
@@ -115,7 +115,9 @@ The rules for this are in `CLAUDE.md`.
     station list, each station's rally destinations, and each route's date windows. Each request
     needs an `X-Requested-Alias` header naming the endpoint.
   - `scraper/imoova.py` asks the GraphQL API behind `imoova.com/deals` for every bookable
-    relocation in Europe and the USA (a handful of requests), plus which of them are roadsurfer's.
+    relocation in Europe and the USA (a handful of requests), with the rental company of each.
+  - `scraper/rates.py` reads the European Central Bank's daily euro rates for the other currencies
+    in the data. If that fails, the rates from the last run are kept.
 - `web/matching.js` chains rallies into round trips (distances use the stations' coordinates).
 - `web/app.js` draws the filters, the list, and the Leaflet map.
 - `web/wayhome.js` holds the way-home estimates and links; the car route is fetched in `app.js`.
