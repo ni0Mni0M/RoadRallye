@@ -28,6 +28,7 @@ but the map background may stay blank because OpenStreetMap only serves tiles to
 | Wait between legs | Days allowed between dropping off one van and picking up the next |
 | Train hop between rallies | Lets the next rally start from a different station this far from where the previous one ended (e.g. arrive in Antwerp, take the train to Brussels). A roadsurfer station and an Imoova city less than 30 km apart always count as the same place ("Across town") |
 | Rentals from | Which providers to use: roadsurfer, Imoova or both |
+| Costs | roadsurfer's rally fee and insurance level, the van's diesel use and the fuel price, for the cost estimates (no tolls). Imoova legs use their listed price instead of the rally fee and insurance |
 | Way home | Adds a "Getting home" panel to the selected trip, from the last drop-off to your home station (see below) |
 
 Three-rally trips are rare with tight settings, because they need a rally between two far-away
@@ -54,6 +55,35 @@ Each Imoova leg names the rental company whose van it is, e.g. "Imoova (Indie Ca
 Imoova offers are Indie Campers' (about 9 in 10 in November 2026). roadsurfer USA also lists vans on
 Imoova. When roadsurfer has a rally on the same route around the same days, only the rally is kept;
 the others are shown as "Imoova (roadsurfer van)".
+
+Each trip card also shows an estimated cost (roadsurfer's rally fee and insurance or Imoova's listed
+price, plus diesel for the van), the
+kilometres a day you'd drive, and the countries on the way. **Lowest cost** sorts by it.
+
+## Destinations ranking
+
+Switch from **Trips** to **Destinations** to rank stations instead of listing trips. It uses the
+same filters, so it answers "with my settings, where can I go?". **Where to go** ranks the places
+your round trips stop at; **Where to start** ranks the stations they start from.
+
+| Rank by | What it means |
+| --- | --- |
+| Most departure dates | Different days you could leave on for that place |
+| Most backup options | Ways back per outbound rally, if your first choice gets booked |
+| Most round trips | All matching trips through the station |
+| Longest stay | Most days there between rallies |
+| Most relaxed pace | Fewest km a day on its gentlest trip |
+| Farthest from home, Most countries | How far it takes you, and how many countries you cross |
+| Warmest, Sunniest, Fewest rainy days | Typical weather in the month you'd arrive (2024–2025 average) |
+| Most scenic route | National parks, World Heritage sites, coast and mountains along the route, each shown |
+| Cheapest trip, Cheapest per day | The estimated cost of its cheapest trip |
+| New this week, Departing soonest | Rallies first seen in the last 7 days; the earliest departure |
+| Favourites first | Your starred stations on top |
+| Combined score | Pick several of the above; each station gets the average of its positions, with bars showing why |
+
+Star a station to make it a favourite, tick it when you've been there, and filter by both. Click a
+station to see its trips. The scenic score adds 3 points per national park, 2 per World Heritage
+site and 1 per 20 km by the sea or above 1,000 m, and the row always lists what it found.
 
 ## Way home
 
@@ -110,7 +140,8 @@ The rules for this are in `CLAUDE.md`.
 
 - `scraper/fetch_rallies.py` runs each source and saves the result as `web/data/rallies.json` and
   `web/data/rallies.js`. When a source fails, its data from the last run is kept and the page
-  says how old it is, so one broken source never empties the page.
+  says how old it is, so one broken source never empties the page. It also notes the day each
+  rally first appeared (`first_seen`), for "New this week".
   - `scraper/roadsurfer.py` calls the JSON endpoints behind `booking.roadsurfer.com/rally`: the
     station list, each station's rally destinations, and each route's date windows. Each request
     needs an `X-Requested-Alias` header naming the endpoint.
@@ -118,9 +149,17 @@ The rules for this are in `CLAUDE.md`.
     relocation in Europe and the USA (a handful of requests), with the rental company of each.
   - `scraper/rates.py` reads the European Central Bank's daily euro rates for the other currencies
     in the data. If that fails, the rates from the last run are kept.
+- `scraper/fetch_route_info.py` works out, once per station pair, the road route (OSRM), the
+  countries crossed and the coast nearby (Natural Earth), height above sea level (Open-Meteo),
+  national parks (Wikidata) and World Heritage sites (OpenStreetMap) within 10 km. Parks and World
+  Heritage sites are only looked up in Europe, so North American routes score on coast and mountains only.
+  Saved as `web/data/routes.json`; downloads are cached in `scraper/cache/`.
+- `scraper/fetch_climate.py` saves typical monthly weather per station from Open-Meteo
+  (`web/data/climate.json`).
 - `web/matching.js` chains rallies into round trips (distances use the stations' coordinates).
-- `web/app.js` draws the filters, the list, and the Leaflet map.
+- `web/ranking.js` turns those trips into per-station figures, costs and scenic scores.
 - `web/wayhome.js` holds the way-home estimates and links; the car route is fetched in `app.js`.
+- `web/app.js` draws the filters, the lists, and the Leaflet map.
 - `serve.py` serves the site and forwards train and bus searches to Transitous (`/api/transit`).
 
 Both are internal APIs, not documented ones, so they can change without notice. Vehicle details
@@ -129,10 +168,11 @@ are only shown on the providers' booking pages.
 ## Tests
 
 ```bat
-node --test tests/matching.test.js tests/wayhome.test.js
+node --test tests/matching.test.js tests/wayhome.test.js tests/ranking.test.js
 python -m unittest discover -s tests
 ```
 
 ## License
 
-MIT, see `LICENSE`.
+MIT, see `LICENSE`. Data sources keep their own terms: OpenStreetMap and Transitous (ODbL),
+Open-Meteo (CC BY 4.0), Wikidata (CC0), Natural Earth (public domain).
