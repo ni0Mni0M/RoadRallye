@@ -247,10 +247,18 @@ input[type="range"] { width: 100%; margin: 4px 0; accent-color: var(--text); }
 .leg.mid .leg-dot { background: var(--mid); }
 .leg-text { display: flex; flex-direction: column; min-width: 0; }
 .leg-dates { font-size: 14px; }
-.leg-stations { display: flex; font-size: 12.5px; color: var(--muted); white-space: nowrap; }
-/* Long station names get cut, the provider and price stay visible. */
-.leg-route { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.leg-source { flex: none; }
+.leg-stations {
+  display: flex;
+  flex-wrap: wrap;
+  overflow: hidden;
+  font-size: 12.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+/* Long station names get cut. Provider and price stay whole and move to a second line when the
+   first is full; the dot in front of them then sits outside the box and is hidden. */
+.leg-route { overflow: hidden; text-overflow: ellipsis; min-width: 0; margin-right: 0.8em; }
+.leg-source::before { content: "·"; display: inline-block; width: 0.8em; margin-left: -0.8em; text-align: center; }
 
 .book {
   color: var(--text);

@@ -6,6 +6,8 @@ possible pickup day becomes one rally here, returned when the free days run out.
 Stations are Imoova's cities (city-centre coordinates); the exact depot is only given after booking.
 """
 
+import re
+from collections import Counter
 from datetime import date, timedelta
 
 API = "https://api.imoova.com/graphql?RelocationList"
@@ -15,11 +17,14 @@ PAGE_SIZE = 50
 # Imoova's supplier ids for roadsurfer itself (imoova.com/deals/usa?supplier_id=55 lists them).
 ROADSURFER_SUPPLIERS = ["55"]
 
+# Imoova has one supplier account per company and region: "IC - West Europe", "Roadsurfer USA", "McRent (UK)".
+BRANDS = {"IC": "Indie Campers"}
+REGION_SUFFIX = re.compile(r"\s+(\(.*\)|USA|US|UK|EU|Europe|Canada|NZ|AU)$")
+
 QUERY = """
-query RelocationList($first: Int!, $page: Int, $regions: [Region!], $supplier_id: ID,
+query RelocationList($first: Int!, $page: Int, $regions: [Region!],
                      $status: [RelocationStatus!], $type: [RelocationType!]) {
-  relocations(first: $first, page: $page, regions: $regions, supplier_id: $supplier_id,
-              status: $status, type: $type) {
+  relocations(first: $first, page: $page, regions: $regions, status: $status, type: $type) {
     paginatorInfo { hasMorePages }
     data {
       id
@@ -29,6 +34,7 @@ query RelocationList($first: Int!, $page: Int, $regions: [Region!], $supplier_id
       hire_unit_rate
       booking_fee_amount
       currency
+      supplier { id name }
       departureCity { id name state lat lng }
       deliveryCity { id name state lat lng }
     }
@@ -38,7 +44,7 @@ query RelocationList($first: Int!, $page: Int, $regions: [Region!], $supplier_id
 
 
 def fetch_relocations(client, **filters):
-    """Every bookable relocation matching `filters` (regions, supplier_id), page by page."""
+    """Every bookable relocation matching `filters` (regions), page by page."""
     found, page = [], 1
     while True:
         variables = {"first": PAGE_SIZE, "page": page, "status": ["READY"], "type": ["RELOCATION"], **filters}
@@ -68,14 +74,24 @@ def slim_station(city):
     }
 
 
-def to_rallies(relocations, roadsurfer_ids=(), today=None):
+def company(supplier):
+    """The rental company's name without Imoova's region suffix; "roadsurfer" for roadsurfer's own accounts."""
+    if supplier["id"] in ROADSURFER_SUPPLIERS:
+        return "roadsurfer"
+    name = REGION_SUFFIX.sub("", supplier["name"].split(" - ")[0].strip())
+    return BRANDS.get(name, name)
+
+
+def to_rallies(relocations, today=None):
     """One rally per pickup day from today on. The same trip listed twice is kept once, the cheaper one.
 
     price is what the free days cost: the booking fee plus the daily rate (fuel, bond and extra days not included).
+    supplier is the rental company whose van it is.
     """
     today = today or date.today()
     best = {}
     for r in relocations:
+        supplier = company(r["supplier"]) if r.get("supplier") else None
         days = max(1, r["hire_units_allowed"])
         price = (r["booking_fee_amount"] + days * r["hire_unit_rate"]) / 100
         day = max(date.fromisoformat(r["earliest_departure_date"]), today)
@@ -90,8 +106,8 @@ def to_rallies(relocations, roadsurfer_ids=(), today=None):
                 "price": round(price, 2),
                 "currency": r["currency"],
             }
-            if r["id"] in roadsurfer_ids:
-                rally["supplier"] = "roadsurfer"
+            if supplier:
+                rally["supplier"] = supplier
             key = (rally["from"], rally["to"], rally["pickup"], rally["return"])
             if key not in best or rally["price"] < best[key]["price"]:
                 best[key] = rally
@@ -105,10 +121,10 @@ def fetch_all(client, log):
         found = fetch_relocations(client, regions=[region])
         log(f"  {region}: {len(found)} relocations")
         relocations += found
-    roadsurfer_ids = {r["id"] for s in ROADSURFER_SUPPLIERS for r in fetch_relocations(client, supplier_id=s)}
-    log(f"  {len(roadsurfer_ids)} of them are roadsurfer vans")
+    companies = Counter(company(r["supplier"]) for r in relocations if r.get("supplier"))
+    log("  by company: " + ", ".join(f"{name} {n}" for name, n in companies.most_common()))
 
-    rallies = to_rallies(relocations, roadsurfer_ids)
+    rallies = to_rallies(relocations)
     cities = {}
     for r in relocations:
         for city in (r["departureCity"], r["deliveryCity"]):

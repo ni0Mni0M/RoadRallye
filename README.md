@@ -50,8 +50,10 @@ that opens the provider's booking page for exactly that rally. Settings are reme
 | Price | Not in the data (usually from €129) | Shown on each leg: booking fee plus the daily rate for the free days. Fuel, bond and extra days come on top |
 | Coverage today | Europe and North America | Europe (few offers outside spring and autumn, none from Germany in November) and the USA |
 
-roadsurfer USA also lists vans on Imoova. When roadsurfer has a rally on the same route around the
-same days, only the rally is kept; the others are shown as "Imoova (roadsurfer van)".
+Each Imoova leg names the rental company whose van it is, e.g. "Imoova (Indie Campers van)". Most
+Imoova offers are Indie Campers' (about 9 in 10 in November 2026). roadsurfer USA also lists vans on
+Imoova. When roadsurfer has a rally on the same route around the same days, only the rally is kept;
+the others are shown as "Imoova (roadsurfer van)".
 
 ## Way home
 

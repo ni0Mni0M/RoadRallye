@@ -13,9 +13,11 @@ from fetch_rallies import drop_known_rallies, previous_part  # noqa: E402
 LAS_VEGAS = {"id": "14", "name": "Las Vegas", "state": "US_NV", "lat": 36.1716, "lng": -115.1391}
 MIAMI = {"id": "38", "name": "Miami", "state": "US_FL", "lat": 25.7617, "lng": -80.1918}
 BILBAO = {"id": "90", "name": "Bilbao", "state": "ES", "lat": 43.263, "lng": -2.935}
+INDIE = {"id": "12", "name": "IC - USA"}
+ROADSURFER_USA = {"id": "55", "name": "Roadsurfer USA"}
 
 
-def relocation(id, frm, to, first, last, days=12, fee=4900, rate=100, currency="USD"):
+def relocation(id, frm, to, first, last, days=12, fee=4900, rate=100, currency="USD", supplier=INDIE):
     """One relocation as Imoova's API returns it (only the fields the scraper asks for)."""
     return {
         "id": id,
@@ -25,6 +27,7 @@ def relocation(id, frm, to, first, last, days=12, fee=4900, rate=100, currency="
         "hire_unit_rate": rate,
         "booking_fee_amount": fee,
         "currency": currency,
+        "supplier": supplier,
         "departureCity": frm,
         "deliveryCity": to,
     }
@@ -39,7 +42,7 @@ class ToRallies(unittest.TestCase):
         self.assertEqual(rallies[0]["to"], "imoova-38")
         self.assertEqual(rallies[0]["price"], 61)  # $49 booking fee + 12 days at $1
         self.assertEqual(rallies[0]["ref"], "1")
-        self.assertNotIn("supplier", rallies[0])
+        self.assertEqual(rallies[0]["supplier"], "Indie Campers")
 
     def test_skips_pickup_days_before_today(self):
         rallies = imoova.to_rallies([relocation("1", LAS_VEGAS, MIAMI, "2026-11-03", "2026-11-05")], today=date(2026, 11, 4))
@@ -58,17 +61,36 @@ class ToRallies(unittest.TestCase):
 
     def test_marks_roadsurfer_vans(self):
         rallies = imoova.to_rallies(
-            [relocation("1", LAS_VEGAS, MIAMI, "2026-11-03", "2026-11-03")], roadsurfer_ids={"1"}, today=date(2026, 11, 1)
+            [relocation("1", LAS_VEGAS, MIAMI, "2026-11-03", "2026-11-03", supplier=ROADSURFER_USA)],
+            today=date(2026, 11, 1),
         )
         self.assertEqual(rallies[0]["supplier"], "roadsurfer")
+
+    def test_no_supplier_field_without_a_supplier(self):
+        rallies = imoova.to_rallies(
+            [relocation("1", LAS_VEGAS, MIAMI, "2026-11-03", "2026-11-03", supplier=None)], today=date(2026, 11, 1)
+        )
+        self.assertNotIn("supplier", rallies[0])
+
+    def test_company_names_without_region(self):
+        names = {
+            "IC - West Europe": "Indie Campers",
+            "IC - UKIN": "Indie Campers",
+            "McRent (UK)": "McRent",
+            "Travellers Auto Barn USA": "Travellers Auto Barn",
+            "El Monte": "El Monte",
+            "Siesta Campers": "Siesta Campers",
+        }
+        for name, expected in names.items():
+            self.assertEqual(imoova.company({"id": "1", "name": name}), expected)
 
     def test_country_from_state(self):
         self.assertEqual(imoova.slim_station(LAS_VEGAS)["country"], "US")
         self.assertEqual(imoova.slim_station(BILBAO)["country"], "ES")
 
 
-def imoova_part(relocations, roadsurfer_ids=()):
-    rallies = imoova.to_rallies(relocations, roadsurfer_ids, today=date(2026, 11, 1))
+def imoova_part(relocations):
+    rallies = imoova.to_rallies(relocations, today=date(2026, 11, 1))
     stations = [imoova.slim_station(c) for c in (LAS_VEGAS, MIAMI, BILBAO)]
     return {"stations": stations, "rallies": rallies}
 
@@ -84,7 +106,7 @@ ROADSURFER = {
 
 class DropKnownRallies(unittest.TestCase):
     def test_drops_roadsurfer_listing_that_is_already_a_rally(self):
-        part = imoova_part([relocation("1", LAS_VEGAS, MIAMI, "2026-11-03", "2026-11-14")], roadsurfer_ids={"1"})
+        part = imoova_part([relocation("1", LAS_VEGAS, MIAMI, "2026-11-03", "2026-11-14", supplier=ROADSURFER_USA)])
         result = drop_known_rallies(part, ROADSURFER)
         self.assertEqual(result["rallies"], [])
         self.assertEqual(result["stations"], [])
@@ -94,11 +116,11 @@ class DropKnownRallies(unittest.TestCase):
         self.assertEqual(len(drop_known_rallies(part, ROADSURFER)["rallies"]), 12)
 
     def test_keeps_roadsurfer_listing_on_other_dates(self):
-        part = imoova_part([relocation("1", LAS_VEGAS, MIAMI, "2026-11-20", "2026-11-25")], roadsurfer_ids={"1"})
+        part = imoova_part([relocation("1", LAS_VEGAS, MIAMI, "2026-11-20", "2026-11-25", supplier=ROADSURFER_USA)])
         self.assertEqual(len(drop_known_rallies(part, ROADSURFER)["rallies"]), 6)
 
     def test_keeps_everything_without_roadsurfer_data(self):
-        part = imoova_part([relocation("1", LAS_VEGAS, MIAMI, "2026-11-03", "2026-11-14")], roadsurfer_ids={"1"})
+        part = imoova_part([relocation("1", LAS_VEGAS, MIAMI, "2026-11-03", "2026-11-14", supplier=ROADSURFER_USA)])
         self.assertIs(drop_known_rallies(part, None), part)
 
 

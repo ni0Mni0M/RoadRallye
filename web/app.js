@@ -466,7 +466,7 @@
       `<span class="leg-dates">${fmtDay(r.pickup)} → ${fmtDay(r.return)}</span>` +
       '<span class="leg-stations">' +
       `<span class="leg-route">${esc(a.name)} → ${esc(b.name)} · ${plural(M.daysBetween(r.pickup, r.return), "day")}</span>` +
-      `<span class="leg-source">&nbsp;· ${source}</span>` +
+      `<span class="leg-source">${source}</span>` +
       "</span>" +
       "</div>" +
       book +
