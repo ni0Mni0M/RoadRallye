@@ -3,10 +3,14 @@
 
   const M = window.RallyMatching;
   const W = window.WayHome;
+  const R = window.RallyRanking;
   const data = window.RALLY_DATA;
+  const routeData = window.ROUTE_DATA || null; // road, countries and scenery per route (fetch_route_info.py)
+  const climateData = window.CLIMATE_DATA || null; // typical weather per station (fetch_climate.py)
   const $ = (id) => document.getElementById(id);
 
   const STORAGE_KEY = "rally-finder-settings-v1";
+  const PERSONAL_KEY = "rally-finder-personal-v1";
   const PAGE_SIZE = 100;
   // Where each provider's rallies are booked. Stations saved before Imoova was added have no provider: roadsurfer.
   const PROVIDERS = {
@@ -67,6 +71,15 @@
     return `<span title="${esc(listed)}">≈ ${esc(fmtPrice(r.price / rate, "EUR"))}</span>`;
   }
 
+  // The listed price in euros for the cost estimates, or null for rallies without one (roadsurfer's).
+  // Without a saved rate the listed amount is used as is (US$ and € are close enough for an estimate).
+  function priceEur(r) {
+    if (typeof r.price !== "number") return null;
+    const currency = r.currency || "EUR";
+    const rate = currency !== "EUR" && data.rates && data.rates.per_eur[currency];
+    return rate ? r.price / rate : r.price;
+  }
+
   // "4 h 55 min", rounded to 5 minutes since every duration here is an estimate.
   function fmtDuration(min) {
     const m = Math.max(5, Math.round(min / 5) * 5);
@@ -85,15 +98,7 @@
   // First leg is "out", last is "back", anything in between is "mid".
   const legKind = (i, n) => (i === 0 ? "out" : i === n - 1 ? "back" : "mid");
 
-  // Stations a trip stops at between rallies (drop-off and, after a train hop, the next pickup).
-  function stopsOf(t) {
-    const stops = new Set();
-    for (let i = 0; i < t.legs.length - 1; i++) {
-      stops.add(t.legs[i].to);
-      stops.add(t.legs[i + 1].from);
-    }
-    return stops;
-  }
+  const stopsOf = R.stopsOf;
 
   function localToday() {
     const d = new Date();
@@ -159,6 +164,7 @@
   const stations = new Map(
     data.stations.filter((s) => typeof s.lat === "number" && typeof s.lon === "number").map((s) => [s.id, s])
   );
+  const stationById = new Map([...stations.keys()].map((id) => [String(id), id])); // data-* attributes are strings
   const providerById = new Map(data.stations.map((s) => [s.id, s.provider || "roadsurfer"]));
   const providerOf = (r) => providerById.get(r.from) || "roadsurfer";
   const providerName = (p) => (PROVIDERS[p] ? PROVIDERS[p].name : p);
@@ -191,10 +197,20 @@
     carConsumption: 7,
     fuelPrice: 1.8,
     hideProviders: [],
+    rallyFee: 129,
+    insurance: 15,
+    vanConsumption: 10,
+    view: "trips",
+    rankMode: "destinations",
+    rankBy: "dates",
+    combine: ["dates", "warmth", "scenic"],
+    onlyFavs: false,
+    hideVisited: false,
   };
   const TIME_OF_DAY = /^\d\d:\d\d$/;
   const LEG_CHOICES = ["2", "2-3", "3"];
   const HOME_MODES = ["transit", "car"];
+  const RANK_CHOICES = [...Object.keys(R.METRICS), "favourites", "combined"];
 
   function loadSettings() {
     let saved = {};
@@ -210,7 +226,15 @@
     if (!HOME_MODES.includes(s.homeMode)) s.homeMode = DEFAULTS.homeMode;
     s.wayHome = s.wayHome === true;
     if (!TIME_OF_DAY.test(s.dropoffTime)) s.dropoffTime = DEFAULTS.dropoffTime;
-    for (const key of ["carConsumption", "fuelPrice"]) if (!(s[key] > 0)) s[key] = DEFAULTS[key];
+    for (const key of ["carConsumption", "fuelPrice", "vanConsumption"]) if (!(s[key] > 0)) s[key] = DEFAULTS[key];
+    if (!(s.rallyFee >= 0)) s.rallyFee = DEFAULTS.rallyFee;
+    if (![0, 15, 29].includes(s.insurance)) s.insurance = DEFAULTS.insurance;
+    if (!["trips", "destinations"].includes(s.view)) s.view = DEFAULTS.view;
+    if (!["destinations", "starts"].includes(s.rankMode)) s.rankMode = DEFAULTS.rankMode;
+    if (!RANK_CHOICES.includes(s.rankBy)) s.rankBy = DEFAULTS.rankBy;
+    s.combine = Array.isArray(s.combine) ? s.combine.filter((k) => R.METRICS[k]) : DEFAULTS.combine;
+    s.onlyFavs = s.onlyFavs === true;
+    s.hideVisited = s.hideVisited === true;
     if (!s.earliest || s.earliest < today) s.earliest = today;
     if (!s.latest || s.latest < s.earliest) s.latest = M.addDays(s.earliest, 60);
     return s;
@@ -224,12 +248,34 @@
     }
   }
 
+  // Favourite stations and places you've been, kept apart from the filter settings.
+  function loadPersonal() {
+    try {
+      const p = JSON.parse(localStorage.getItem(PERSONAL_KEY)) || {};
+      return { fav: new Set(p.fav || []), visited: new Set(p.visited || []) };
+    } catch (e) {
+      return { fav: new Set(), visited: new Set() };
+    }
+  }
+
+  function savePersonal() {
+    try {
+      localStorage.setItem(PERSONAL_KEY, JSON.stringify({ fav: [...personal.fav], visited: [...personal.visited] }));
+    } catch (e) {
+      // Blocked storage: the marks last until the page is closed.
+    }
+  }
+
   let settings = loadSettings();
+  const personal = loadPersonal();
   let allTrips = [];
   let trips = [];
+  let facts = new Map(); // trip id -> R.tripFacts: cost, road km, countries, scenery
+  let rankRows = [];
   let shown = PAGE_SIZE;
   let selectedId = null;
-  let via = null;
+  let via = null; // only trips stopping at this station
+  let startVia = null; // only trips starting at this station (from "Where to start")
   let animToken = 0;
   let playToken = 0;
   let playing = false;
@@ -272,9 +318,14 @@
 
   const FIELDS = [
     "home", "startRadius", "returnRadius", "earliest", "latest", "maxWait", "hopRadius", "sort",
-    "dropoffTime", "carConsumption", "fuelPrice",
+    "dropoffTime", "carConsumption", "fuelPrice", "rallyFee", "insurance", "vanConsumption",
   ];
-  const NUMERIC = new Set(["startRadius", "returnRadius", "maxWait", "hopRadius", "carConsumption", "fuelPrice"]);
+  const NUMERIC = new Set([
+    "startRadius", "returnRadius", "maxWait", "hopRadius", "carConsumption", "fuelPrice",
+    "rallyFee", "insurance", "vanConsumption",
+  ]);
+  // Chosen outside the filter form (view switch, ranking controls), so readForm keeps them.
+  const OUTSIDE_FORM = ["homeMode", "view", "rankMode", "rankBy", "combine", "onlyFavs", "hideVisited"];
 
   function writeForm() {
     for (const key of FIELDS) $(key).value = settings[key];
@@ -291,9 +342,10 @@
     next.hideProviders = providerBoxes().filter((box) => !box.checked).map((box) => box.value);
     next.legs = $("filters").elements.legs.value;
     next.wayHome = $("wayHome").checked;
-    next.homeMode = settings.homeMode; // chosen with the tabs in the trip card, not the form
+    for (const key of OUTSIDE_FORM) next[key] = settings[key];
     if (!TIME_OF_DAY.test(next.dropoffTime)) next.dropoffTime = DEFAULTS.dropoffTime;
-    for (const key of ["carConsumption", "fuelPrice"]) if (!(next[key] > 0)) next[key] = DEFAULTS[key];
+    for (const key of ["carConsumption", "fuelPrice", "vanConsumption"]) if (!(next[key] > 0)) next[key] = DEFAULTS[key];
+    if (!(next.rallyFee >= 0)) next.rallyFee = DEFAULTS.rallyFee;
     settings = next;
   }
 
@@ -337,7 +389,7 @@
       latest: settings.latest,
       maxWaitDays: settings.maxWait,
       maxLegs: settings.legs === "2" ? 2 : 3,
-      sort: settings.sort,
+      sort: settings.sort === "cost" ? "start" : settings.sort, // compute() sorts by cost itself
     });
     return settings.legs === "3" ? found.filter((t) => t.legs.length === 3) : found;
   }
@@ -396,21 +448,38 @@
     $("legendMid").hidden = settings.legs === "2";
     $("legendHome").hidden = !settings.wayHome;
 
+    const factsCtx = { stations, routes: routeData && routeData.routes, costs: costSettings() };
+    facts = new Map(allTrips.map((t) => [t.id, R.tripFacts(t, factsCtx)]));
+    if (settings.sort === "cost") allTrips.sort((a, b) => facts.get(a.id).cost - facts.get(b.id).cost);
+
     if (via !== null && !allTrips.some((t) => stopsOf(t).has(via))) via = null;
+    if (startVia !== null && !allTrips.some((t) => t.legs[0].from === startVia)) startVia = null;
     trips = filterVia(allTrips);
     shown = PAGE_SIZE;
 
-    const keepSelection = selectedId && trips.some((t) => t.id === selectedId);
+    const keepSelection = settings.view === "trips" && selectedId && trips.some((t) => t.id === selectedId);
     renderList();
+    rankRows = computeRanking();
+    renderRanking();
     drawBase();
     if (keepSelection) selectTrip(selectedId, { animate: false });
     else clearSelection();
   }
 
-  const filterVia = (list) => (via === null ? list : list.filter((t) => stopsOf(t).has(via)));
+  const costSettings = () => ({
+    rallyFee: settings.rallyFee,
+    insurancePerDay: settings.insurance,
+    vanLitresPer100Km: settings.vanConsumption,
+    fuelPrice: settings.fuelPrice,
+    priceEur,
+  });
+
+  const filterVia = (list) =>
+    list.filter((t) => (via === null || stopsOf(t).has(via)) && (startVia === null || t.legs[0].from === startVia));
 
   function setVia(id) {
     via = id;
+    startVia = null;
     stopPlay();
     trips = filterVia(allTrips);
     shown = PAGE_SIZE;
@@ -514,15 +583,32 @@
     });
     const waitFact = t.waitDays === 0 ? "no waiting" : `${plural(t.waitDays, "day")} waiting`;
     const legsFact = n === 3 ? "3 rallies · " : "";
+    const f = facts.get(t.id);
+    const costLine = f
+      ? `<p class="facts" title="Rental (rally fee and insurance, or the listed price) and diesel for ${fmtKm(f.roadKm)}${f.measured ? "" : " (distance estimated)"}; no tolls">` +
+        `≈ €${Math.round(f.cost).toLocaleString("en-GB")} · ${Math.round(f.kmPerDay)} km a day` +
+        `${f.countries.length > 1 ? ` · ${f.countries.join(" → ")}` : ""}</p>`
+      : "";
 
     return (
       `<li class="trip${t.id === selectedId ? " selected" : ""}" data-id="${esc(t.id)}" tabindex="0">` +
       `<h3>${title}</h3>` +
       body +
       `<p class="facts">${plural(t.totalDays, "day")} · ${legsFact}${waitFact} · ends ${fmtKm(t.endKm)} from home</p>` +
+      costLine +
       timelineHtml(t) +
       "</li>"
     );
+  }
+
+  // "Berlin → Madrid → Marburg" (with ⇢ for a train hop), as plain text.
+  function routeText(t) {
+    const names = [stations.get(t.legs[0].from).name];
+    t.legs.forEach((r, i) => {
+      if (i > 0 && r.from !== t.legs[i - 1].to) names.push(`⇢ ${stations.get(r.from).name}`);
+      names.push(stations.get(r.to).name);
+    });
+    return names.join(" → ").replace(/→ ⇢/g, "⇢");
   }
 
   function renderList() {
@@ -533,10 +619,12 @@
       : settings.legs === "2-3"
         ? `${plural(n, "round trip")} · ${threes} with 3 rallies`
         : plural(n, "round trip");
+    const chip = (label) =>
+      `<span class="chip">${label}<button type="button" id="clearVia" aria-label="Show all trips">×</button></span>`;
     $("viaChip").innerHTML =
-      via === null
-        ? ""
-        : `<span class="chip">Via ${esc(stations.get(via).name)}<button type="button" id="clearVia" aria-label="Show trips via all destinations">×</button></span>`;
+      via !== null ? chip(`Via ${esc(stations.get(via).name)}`)
+        : startVia !== null ? chip(`Starting at ${esc(stations.get(startVia).name)}`)
+          : "";
 
     if (!n) {
       $("results").innerHTML = $("dateError").textContent
@@ -552,6 +640,308 @@
     $("results").innerHTML =
       trips.slice(0, shown).map(tripHtml).join("") +
       (rest > 0 ? `<li class="more"><button type="button" id="showMore">Show ${Math.min(PAGE_SIZE, rest)} more</button></li>` : "");
+  }
+
+  // ---------- Ranking ----------
+
+  const regionNames = new Intl.DisplayNames(["en"], { type: "region" });
+  const countryName = (code) => {
+    try {
+      return regionNames.of(code);
+    } catch (e) {
+      return code;
+    }
+  };
+  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const freshSince = R.freshSince(data.fetched_at, data.tracking_since);
+  const rankKey = () => (settings.rankBy === "favourites" ? "trips" : settings.rankBy);
+
+  // Why a ranking can't be used right now, or "" when it can.
+  function rankUnavailable(key) {
+    const m = R.METRICS[key];
+    if (!m) return "";
+    if (!m.modes.includes(settings.rankMode)) return "only for where to go";
+    if (m.needs === "routes" && !routeData) return "needs route data";
+    if (m.needs === "climate" && !climateData) return "needs weather data";
+    if (m.needs === "tracking" && !freshSince) return "from the next data update";
+    return "";
+  }
+
+  function fillRankControls() {
+    for (const el of document.querySelectorAll('input[name="view"]')) el.checked = el.value === settings.view;
+    for (const el of document.querySelectorAll('input[name="rankMode"]')) el.checked = el.value === settings.rankMode;
+    if (rankUnavailable(settings.rankBy)) settings.rankBy = "dates";
+
+    const option = (key, label) => {
+      const why = rankUnavailable(key);
+      return `<option value="${key}"${why ? " disabled" : ""}>${esc(label)}${why ? ` (${why})` : ""}</option>`;
+    };
+    const groups = new Map();
+    for (const [key, m] of Object.entries(R.METRICS)) {
+      if (!groups.has(m.group)) groups.set(m.group, []);
+      groups.get(m.group).push(key);
+    }
+    $("rankBy").innerHTML =
+      [...groups].map(([g, keys]) => `<optgroup label="${esc(g)}">${keys.map((k) => option(k, R.METRICS[k].label)).join("")}</optgroup>`).join("") +
+      `<optgroup label="Personal">${option("favourites", "Favourites first")}</optgroup>` +
+      `<optgroup label="Several at once">${option("combined", "Combined score")}</optgroup>`;
+    $("rankBy").value = settings.rankBy;
+
+    $("combineChips").hidden = settings.rankBy !== "combined";
+    $("combineChips").innerHTML = Object.entries(R.METRICS)
+      .filter(([k]) => !rankUnavailable(k))
+      .map(([k, m]) => `<label class="chip-check"><input type="checkbox" value="${k}"${settings.combine.includes(k) ? " checked" : ""}><span>${esc(m.label)}</span></label>`)
+      .join("");
+    $("onlyFavs").checked = settings.onlyFavs;
+    $("hideVisited").checked = settings.hideVisited;
+  }
+
+  function computeRanking() {
+    if (!allTrips.length) return [];
+    if (rankUnavailable(settings.rankBy)) settings.rankBy = "dates";
+    const rows = R.rankStations(allTrips, { stations, facts }, {
+      mode: settings.rankMode,
+      by: rankKey(),
+      combine: settings.combine,
+      home: stations.get(settings.home),
+      today,
+      freshSince,
+      climate: climateData,
+    });
+    if (settings.rankBy === "favourites") {
+      rows.sort((a, b) => Number(personal.fav.has(b.id)) - Number(personal.fav.has(a.id)) || b.trips - a.trips);
+    }
+    return rows;
+  }
+
+  const visibleRankRows = () =>
+    rankRows.filter((r) => (!settings.onlyFavs || personal.fav.has(r.id)) && (!settings.hideVisited || !personal.visited.has(r.id)));
+
+  function fmtMetric(key, v) {
+    if (v === null || v === undefined) return "–";
+    const money = (x) => `€${Math.round(x).toLocaleString("en-GB")}`;
+    switch (key) {
+      case "dates": return plural(v, "date");
+      case "backups": return `${v.toLocaleString("en-GB")} per departure`;
+      case "trips": return plural(v, "trip");
+      case "stay": return v ? plural(v, "day") : "same day";
+      case "pace": return `${Math.round(v)} km/day`;
+      case "distance": return fmtKm(v);
+      case "countries": return v === 1 ? "1 country" : `${v} countries`;
+      case "warmth": return `${Math.round(v)} °C`;
+      case "sun": return `${v.toFixed(1)} h sun`;
+      case "dry": return `${Math.round(v)} rainy days`;
+      case "scenic": return `${Math.round(v)} points`;
+      case "cost": return money(v);
+      case "costPerDay": return `${money(v)}/day`;
+      case "fresh": return `${v} new`;
+      case "soonest": return v === 0 ? "today" : v === 1 ? "tomorrow" : `in ${v} days`;
+      case "combined": return `${Math.round(v * 100)}/100`;
+      default: return String(v);
+    }
+  }
+
+  function weatherText(row) {
+    const months = climateData && climateData.stations[String(row.id)];
+    if (!months || row.arrivalMonth === null) return "";
+    const w = months[row.arrivalMonth];
+    return `Arriving in ${MONTHS[row.arrivalMonth]}: ${Math.round(w.t)} °C highs, ${w.sun} h of sun a day, ` +
+      `${Math.round(w.rain)} rainy days (${esc(climateData.period)} average)`;
+  }
+
+  function scenicText(t) {
+    const f = facts.get(t.id);
+    const parts = [
+      f.parks.length && plural(f.parks.length, "national park"),
+      f.unesco.length && `${f.unesco.length} UNESCO site${f.unesco.length === 1 ? "" : "s"}`,
+      f.coastKm && `${fmtKm(f.coastKm)} by the sea`,
+      f.mountainKm && `${fmtKm(f.mountainKm)} above 1,000 m`,
+    ].filter(Boolean);
+    const names = [...f.parks, ...f.unesco];
+    return (
+      `${parts.length ? parts.join(" · ") : "No parks, World Heritage sites, coast or mountains"} on ${esc(routeText(t))}` +
+      (names.length
+        ? `<span class="rank-names">${esc(names.slice(0, 4).join(", "))}${names.length > 4 ? `, +${names.length - 4} more` : ""}</span>`
+        : "")
+    );
+  }
+
+  // One line explaining the figure a station is ranked by.
+  function detailHtml(row, key) {
+    const f = (t) => facts.get(t.id);
+    switch (key) {
+      case "scenic":
+        return row.best.scenic ? scenicText(row.best.scenic) : "";
+      case "countries":
+        return esc(f(row.best.countries).countries.map(countryName).join(" → "));
+      case "warmth":
+      case "sun":
+      case "dry":
+        return weatherText(row);
+      case "cost":
+      case "costPerDay": {
+        const t = row.best.cost;
+        return `From €${Math.round(f(t).cost).toLocaleString("en-GB")} for ${esc(routeText(t))}, ${plural(t.totalDays, "day")}`;
+      }
+      case "pace":
+        return `${Math.round(f(row.best.pace).kmPerDay)} km a day on ${esc(routeText(row.best.pace))}`;
+      case "stay":
+        return row.values.stay ? `Up to ${plural(row.values.stay, "day")} there between rallies` : "You switch vans the same day";
+      case "fresh":
+        return `${row.values.fresh} of ${plural(row.trips, "trip")} use rallies first seen since ${fmtDay(freshSince)}`;
+      case "soonest":
+        return `First departure ${fmtDay(row.dateList[0])}`;
+      case "distance":
+        return `${fmtKm(row.values.distance)} from ${esc(stations.get(settings.home).name)} as the crow flies`;
+      case "combined":
+        return (
+          '<span class="rank-parts">' +
+          Object.entries(row.parts)
+            .map(([k, p]) => `<span class="part"><span>${esc(R.METRICS[k].label)}</span><span class="part-bar"><i style="width:${Math.round(p * 100)}%"></i></span></span>`)
+            .join("") +
+          "</span>"
+        );
+      default: {
+        const shown3 = row.dateList.slice(0, 3).map(fmtDay).join(", ");
+        return `Leave on ${shown3}${row.dateList.length > 3 ? `, +${row.dateList.length - 3} more` : ""}`;
+      }
+    }
+  }
+
+  function dateStripHtml(row) {
+    const span = Math.max(1, M.daysBetween(settings.earliest, settings.latest));
+    return (
+      '<div class="rank-strip" aria-hidden="true">' +
+      row.dateList.map((d) => `<i style="left:${((M.daysBetween(settings.earliest, d) / span) * 100).toFixed(1)}%"></i>`).join("") +
+      "</div>"
+    );
+  }
+
+  function rankRowHtml(row, position) {
+    const key = rankKey();
+    const fav = personal.fav.has(row.id);
+    const been = personal.visited.has(row.id);
+    const away = settings.rankMode === "destinations" ? ` · ${fmtKm(M.haversineKm(stations.get(settings.home), stations.get(row.id)))} away` : "";
+    return (
+      `<li class="rank-row" data-station="${esc(row.id)}" tabindex="0">` +
+      `<span class="rank-no">${row.rank === null ? "–" : position}</span>` +
+      '<div class="rank-main">' +
+      `<h3>${esc(row.name)} <span class="rank-country">${esc(countryName(row.country))}</span></h3>` +
+      `<p class="rank-sub">${plural(row.values.dates, "departure date")} · ${plural(row.trips, "round trip")}${away}</p>` +
+      `<p class="rank-detail">${detailHtml(row, key)}</p>` +
+      dateStripHtml(row) +
+      "</div>" +
+      '<div class="rank-side">' +
+      `<span class="rank-value">${fmtMetric(key, row.values[key])}</span>` +
+      '<span class="rank-actions">' +
+      `<button type="button" class="icon-btn" data-fav aria-pressed="${fav}" title="Favourite" aria-label="Favourite: ${esc(row.name)}">${fav ? "★" : "☆"}</button>` +
+      `<button type="button" class="icon-btn" data-visited aria-pressed="${been}" title="Been there" aria-label="Been there: ${esc(row.name)}">✓</button>` +
+      "</span></div></li>"
+    );
+  }
+
+  function renderRanking() {
+    fillRankControls();
+    $("tripsView").hidden = settings.view !== "trips";
+    $("rankView").hidden = settings.view !== "destinations";
+    $("playAll").hidden = settings.view !== "trips";
+    if (settings.view !== "destinations") return;
+
+    const rows = visibleRankRows();
+    const what = settings.rankMode === "destinations" ? "places your round trips stop at" : "stations your round trips start from";
+    $("rankCount").textContent = rows.length ? `${plural(rows.length, "station")}: ${what}` : "";
+
+    const notes = [];
+    if (!routeData) notes.push("Road distances and scenery are missing, so costs and pace are estimates. Run update-data.bat.");
+    if (!climateData) notes.push("Weather data is missing. Run update-data.bat.");
+    if (!freshSince && data.tracking_since) notes.push(`New rallies are tracked since ${fmtDay(data.tracking_since)}; they show from the next update.`);
+    if (rows.length && rows.every((r) => r.rank === null)) {
+      notes.push("None of these stations has this figure yet, probably because route data is incomplete. Run update-data.bat.");
+    }
+    $("rankNote").textContent = notes.join(" ");
+
+    $("ranking").innerHTML = rows.length
+      ? rows.map((r, i) => rankRowHtml(r, i + 1)).join("")
+      : `<li class="empty">${allTrips.length ? "No station matches these marks. Untick the favourites or visited filter." : "No round trips with these filters, so nothing to rank."}</li>`;
+
+    const key = rankKey();
+    const credits = [];
+    if (["warmth", "sun", "dry"].includes(key) || (key === "combined" && settings.combine.some((k) => ["warmth", "sun", "dry"].includes(k)))) {
+      credits.push('Weather: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo.com</a>');
+    }
+    if (routeData) {
+      credits.push(
+        'Roads: <a href="https://project-osrm.org/" target="_blank" rel="noopener">OSRM</a> · borders and coast: Natural Earth · ' +
+        "national parks: Wikidata · World Heritage sites: OpenStreetMap"
+      );
+    }
+    $("rankCredits").innerHTML = credits.join("<br>");
+  }
+
+  function drawRankMarkers() {
+    const key = rankKey();
+    visibleRankRows()
+      .filter((r) => r.rank !== null)
+      .forEach((row, i) => {
+        const s = stations.get(row.id);
+        const top = i < 10;
+        const marker = top
+          ? L.marker([s.lat, s.lon], {
+              icon: L.divIcon({ className: "rank-pin", html: `<div>${i + 1}</div>`, iconSize: [26, 26], iconAnchor: [13, 13] }),
+              zIndexOffset: 1000 - i,
+              keyboard: false,
+            })
+          : L.circleMarker([s.lat, s.lon], { pane: "stations", radius: 5, color: COLORS.panel, weight: 1.5, fillColor: COLORS.out, fillOpacity: 0.8 });
+        marker
+          .bindTooltip(`<strong>${i + 1}. ${esc(s.name)}</strong><br>${fmtMetric(key, row.values[key])} · click for its trips`, {
+            direction: "top",
+            offset: [0, top ? -12 : -5],
+          })
+          .on("click", () => openStation(row.id))
+          .addTo(layers.stations);
+      });
+  }
+
+  // From the ranking to the trips through (or starting at) one station.
+  function openStation(id) {
+    if (settings.rankMode === "starts") {
+      startVia = id;
+      via = null;
+    } else {
+      via = id;
+      startVia = null;
+    }
+    setView("trips");
+    $("tripsView").scrollIntoView({ block: "start", behavior: reduceMotion ? "auto" : "smooth" });
+  }
+
+  function setView(view) {
+    settings.view = view;
+    saveSettings();
+    stopPlay();
+    trips = filterVia(allTrips);
+    shown = PAGE_SIZE;
+    renderList();
+    renderRanking();
+    drawBase();
+    clearSelection();
+  }
+
+  function rerank() {
+    saveSettings();
+    rankRows = computeRanking();
+    renderRanking();
+    drawBase();
+    fitOverview();
+  }
+
+  function togglePersonal(set, id) {
+    if (set.has(id)) set.delete(id);
+    else set.add(id);
+    savePersonal();
+    if (settings.rankBy === "favourites") rankRows = computeRanking();
+    renderRanking();
+    drawBase();
   }
 
   // ---------- Map drawing ----------
@@ -604,6 +994,11 @@
     L.marker([home.lat, home.lon], { icon: homeIcon, keyboard: false, zIndexOffset: 500 })
       .bindTooltip(`Home: ${esc(home.name)}`, { direction: "top", offset: [0, -14] })
       .addTo(layers.home);
+
+    if (settings.view === "destinations") {
+      drawRankMarkers();
+      return;
+    }
 
     // Faint lines for every route used by the current trips.
     const routes = new Map();
@@ -690,11 +1085,13 @@
   function fitOverview() {
     const home = stations.get(settings.home);
     const bounds = L.latLng(home.lat, home.lon).toBounds(settings.returnRadius * 2000);
-    for (const t of trips) {
-      for (const id of stopsOf(t)) {
-        const s = stations.get(id);
-        bounds.extend([s.lat, s.lon]);
-      }
+    const ids =
+      settings.view === "destinations"
+        ? visibleRankRows().filter((r) => r.rank !== null).slice(0, 15).map((r) => r.id)
+        : trips.flatMap((t) => [...stopsOf(t)]);
+    for (const id of ids) {
+      const s = stations.get(id);
+      bounds.extend([s.lat, s.lon]);
     }
     map.fitBounds(bounds, { padding: [40, 40], maxZoom: 8, animate: !reduceMotion });
   }
@@ -1153,6 +1550,48 @@
 
   $("viaChip").addEventListener("click", (e) => {
     if (e.target.closest("#clearVia")) setVia(null);
+  });
+
+  for (const el of document.querySelectorAll('input[name="view"]')) {
+    el.addEventListener("change", () => setView(el.value));
+  }
+  for (const el of document.querySelectorAll('input[name="rankMode"]')) {
+    el.addEventListener("change", () => {
+      settings.rankMode = el.value;
+      rerank();
+    });
+  }
+  $("rankBy").addEventListener("change", () => {
+    settings.rankBy = $("rankBy").value;
+    rerank();
+  });
+  $("combineChips").addEventListener("change", () => {
+    settings.combine = [...$("combineChips").querySelectorAll("input:checked")].map((el) => el.value);
+    rerank();
+  });
+  for (const id of ["onlyFavs", "hideVisited"]) {
+    $(id).addEventListener("change", () => {
+      settings[id] = $(id).checked;
+      saveSettings();
+      renderRanking();
+      drawBase();
+    });
+  }
+
+  $("ranking").addEventListener("click", (e) => {
+    const row = e.target.closest(".rank-row");
+    if (!row) return;
+    const id = stationById.get(row.dataset.station);
+    if (e.target.closest("[data-fav]")) togglePersonal(personal.fav, id);
+    else if (e.target.closest("[data-visited]")) togglePersonal(personal.visited, id);
+    else openStation(id);
+  });
+  $("ranking").addEventListener("keydown", (e) => {
+    const row = e.target.closest(".rank-row");
+    if (row && e.target === row && (e.key === "Enter" || e.key === " ")) {
+      e.preventDefault();
+      openStation(stationById.get(row.dataset.station));
+    }
   });
 
   $("playAll").addEventListener("click", () => (playing ? stopPlay() : startPlay()));
