@@ -3,6 +3,8 @@ rem Downloads the current roadsurfer rallies and Imoova relocations into web\dat
 rem then the route and weather data the destinations ranking needs.
 rem Pass /nopause when running it from Task Scheduler.
 cd /d "%~dp0"
+echo RoadRalley data update, %date% %time:~0,5%
+echo.
 python scraper\fetch_rallies.py
 if errorlevel 1 (
   echo.

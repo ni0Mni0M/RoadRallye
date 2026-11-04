@@ -12,6 +12,10 @@ API = "https://booking.roadsurfer.com/api/{locale}/rally"
 # Give up on the whole source if more than this share of routes fail.
 MAX_FAILURE_RATE = 0.2
 
+# Share of the progress bar for the destination lists, before the number of routes is known.
+# It's about one request in six, so the bar hardly jumps when the date requests start.
+DESTINATIONS_SHARE = 0.15
+
 
 def slim_station(s):
     coord = s.get("coordinate") or {}
@@ -27,27 +31,29 @@ def slim_station(s):
     }
 
 
-def fetch_all(client, log, locale="en"):
+def fetch_all(client, log, locale="en", bar=None):
+    """log(text) prints warnings; bar (a progress.Progress, optional) shows how far it got."""
     base = API.format(locale=locale)
+    show = bar.update if bar else (lambda fraction, detail=None: None)
 
     def get(path, alias):
         return client.fetch(base + path, {"X-Requested-Alias": alias})
 
+    show(0, "station list")
     stations = get("/stations", "rally.startStations")
     if not stations:
         raise RuntimeError("Station list came back empty")
 
     starts = [s for s in stations if s.get("one_way") and s.get("public") and s.get("enabled")]
-    log(f"{len(stations)} stations, {len(starts)} offer one-way rallies")
 
     routes = []
     for i, s in enumerate(starts, 1):
         detail = get(f"/stations/{s['id']}", "rally.fetchRoutes") or {}
         for end in detail.get("returns") or []:
             routes.append((s["id"], end))
-        log(f"  [{i}/{len(starts)}] {s['name']}: {len(detail.get('returns') or [])} destinations")
+        show(DESTINATIONS_SHARE * i / len(starts), f"destinations {i}/{len(starts)} · {s['name']}")
 
-    log(f"{len(routes)} routes, fetching dates...")
+    requests = len(starts) + len(routes)
     rallies, failures = [], 0
     for i, (start, end) in enumerate(routes, 1):
         try:
@@ -56,6 +62,8 @@ def fetch_all(client, log, locale="en"):
             failures += 1
             log(f"  ! {start}-{end}: {e}")
             continue
+        finally:
+            show((len(starts) + i) / requests, f"dates {i}/{len(routes)} · {len(rallies)} rallies")
         for f in frames:
             rallies.append({
                 "from": start,
@@ -63,8 +71,6 @@ def fetch_all(client, log, locale="en"):
                 "pickup": f["startDate"][:10],
                 "return": f["endDate"][:10],
             })
-        if i % 50 == 0:
-            log(f"  {i}/{len(routes)} routes, {len(rallies)} rallies so far")
 
     if routes and failures / len(routes) > MAX_FAILURE_RATE:
         raise RuntimeError(f"{failures} of {len(routes)} routes failed")

@@ -15,22 +15,24 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 import imoova
+import progress
 import roadsurfer
 from common import Client, haversine_km
 from rates import fetch_rates
 
 DEFAULT_OUT = Path(__file__).resolve().parent.parent / "web" / "data"
 SOURCES = ["roadsurfer", "imoova"]
+LABELS = {"roadsurfer": ("roadsurfer", "rallies"), "imoova": ("Imoova", "relocations")}  # bar label, what it counts
 
 # A roadsurfer van on Imoova is the same offer as a rally when both ends are this close to the rally's
 # stations. Looser than SAME_PLACE_KM in web/matching.js: roadsurfer's "Dallas" is in Fort Worth.
 SAME_ROUTE_KM = 60
 
 
-def fetch_source(name, client, args, log):
+def fetch_source(name, client, args, log, bar=None):
     if name == "roadsurfer":
-        return roadsurfer.fetch_all(client, log, args.locale)
-    return imoova.fetch_all(client, log)
+        return roadsurfer.fetch_all(client, log, args.locale, bar)
+    return imoova.fetch_all(client, log, bar)
 
 
 def previous_part(old, name):
@@ -126,9 +128,11 @@ def main():
         if args.source and name not in args.source:
             part = previous_part(old, name)
         else:
-            print(f"--- {name}", flush=True)
+            label, unit = LABELS[name]
             try:
-                part = fetch_source(name, Client(args.delay), args, lambda msg: print(msg, flush=True))
+                with progress.bar(label) as bar:
+                    part = fetch_source(name, Client(args.delay), args, progress.say, bar)
+                    bar.done(f"{len(part['rallies'])} {unit}")
                 part["fetched_at"] = now
             except Exception as e:
                 print(f"{name} failed, keeping its previous data: {e}", file=sys.stderr)
@@ -162,8 +166,9 @@ def main():
     if currencies:
         try:
             data["rates"] = fetch_rates(currencies)
+            progress.item("exchange rates", ", ".join(sorted(currencies)))
         except Exception as e:
-            print(f"Exchange rates failed, keeping the previous ones: {e}", file=sys.stderr)
+            progress.item("exchange rates", f"failed, keeping the previous ones: {e}", ok=False)
             if old and old.get("rates"):
                 data["rates"] = old["rates"]
 
@@ -175,7 +180,7 @@ def main():
     write_atomic(args.out / "rallies.js", f"window.RALLY_DATA = {body};\n")
 
     counts = ", ".join(f"{len(p['rallies'])} from {name}" for name, p in parts.items())
-    print(f"Saved {counts} at {len(data['stations'])} stations to {args.out} in {time.time() - started:.0f}s")
+    progress.item("saved", f"{counts} at {len(data['stations'])} stations ({time.time() - started:.0f}s)")
     return 1 if failed else 0
 
 

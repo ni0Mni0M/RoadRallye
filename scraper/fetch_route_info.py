@@ -24,6 +24,8 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+import progress
+
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "web" / "data"
 CACHE_DIR = Path(__file__).resolve().parent / "cache"
@@ -61,7 +63,7 @@ def get_json(url, timeout=60, retries=3, headers=None):
                 raise
             # 429 = too many requests: wait as long as the server asks (Wikidata may want a minute).
             wait = int(e.headers.get("Retry-After") or 65) if e.code == 429 else 3 * (attempt + 1)
-            print(f"  waiting {wait}s ({e.code})", flush=True)
+            progress.say(f"  {urllib.parse.urlsplit(url).hostname} busy ({e.code}), waiting {wait}s")
             time.sleep(wait)
         except Exception:
             if attempt == retries - 1:
@@ -208,7 +210,7 @@ def fetch_unesco():
         except urllib.error.HTTPError as e:
             if attempt == 3 or e.code not in (429, 502, 503, 504):
                 raise
-            print(f"  Overpass busy ({e.code}), retrying in 30s", flush=True)
+            progress.say(f"  Overpass busy ({e.code}), retrying in 30s")
             time.sleep(30)
     pois = {}
     for el in elements:
@@ -359,30 +361,42 @@ def main():
     todo = [p for p in pairs if f"{p[0]}-{p[1]}" not in data["routes"]]
     if args.limit:
         todo = todo[:args.limit]
-    print(f"{len(pairs)} routes, {len(todo)} new", flush=True)
     if not todo:
+        progress.item("routes", f"all {len(pairs)} already saved")
         return 0
 
-    print("Loading reference data (first run downloads ~10 MB)...", flush=True)
-    refs = {"countries": load_countries(), "coast": load_coast(), "parks": load_pois("parks"), "unesco": load_pois("unesco")}
+    # Borders, coast, national parks and World Heritage sites: downloaded once (~10 MB), then from scraper/cache/.
+    loaders = [
+        ("countries", "borders", load_countries),
+        ("coast", "coastline", load_coast),
+        ("parks", "national parks", lambda: load_pois("parks")),
+        ("unesco", "World Heritage sites", lambda: load_pois("unesco")),
+    ]
+    refs = {}
+    with progress.bar("reference data") as bar:
+        for i, (key, name, load) in enumerate(loaders):
+            bar.update(i / len(loaders), name)
+            refs[key] = load()
+        bar.done("borders, coast, parks, World Heritage sites")
 
     failures = 0
-    for i, (a, b) in enumerate(todo, 1):
-        try:
-            info = describe_route(stations[a], stations[b], refs, args.pause)
-        except Exception as e:
-            failures += 1
-            print(f"  ! {stations[a]['name']} - {stations[b]['name']}: {e}", flush=True)
-            continue
-        data["routes"][f"{a}-{b}"] = info
-        if i % 20 == 0:
-            write(data)
-            print(f"  {i}/{len(todo)} routes", flush=True)
-        time.sleep(args.pause)
+    with progress.bar("routes") as bar:
+        for i, (a, b) in enumerate(todo, 1):
+            bar.update((i - 1) / len(todo), f"{i}/{len(todo)} · {stations[a]['name']} – {stations[b]['name']}")
+            try:
+                info = describe_route(stations[a], stations[b], refs, args.pause)
+            except Exception as e:
+                failures += 1
+                progress.say(f"  ! {stations[a]['name']} - {stations[b]['name']}: {e}")
+                continue
+            data["routes"][f"{a}-{b}"] = info
+            if i % 20 == 0:
+                write(data)
+            time.sleep(args.pause)
 
-    data["generated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    write(data)
-    print(f"Saved {len(data['routes'])} routes ({failures} failed)", flush=True)
+        data["generated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        write(data)
+        bar.done(f"{len(todo) - failures} new, {len(data['routes'])} saved" + (f", {failures} failed" if failures else ""))
     return 0 if failures < max(5, len(todo) // 5) else 1
 
 

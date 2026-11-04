@@ -16,6 +16,8 @@ import time
 import urllib.request
 from pathlib import Path
 
+import progress
+
 DATA_DIR = Path(__file__).resolve().parent.parent / "web" / "data"
 USER_AGENT = "RoadRalley/1.0 (seasonal ranking for a personal rally planner)"
 YEARS = (2024, 2025)
@@ -61,25 +63,28 @@ def main():
     todo = [s for s in stations if str(s["id"]) not in data["stations"]]
     if args.limit:
         todo = todo[:args.limit]
-    print(f"{len(stations)} stations, {len(todo)} new", flush=True)
+    if not todo:
+        progress.item("weather", f"all {len(stations)} stations already saved")
+        return 0
 
     failures = 0
-    for i, s in enumerate(todo, 1):
-        req = urllib.request.Request(URL.format(lat=s["lat"], lon=s["lon"]), headers={"User-Agent": USER_AGENT})
-        try:
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                data["stations"][str(s["id"])] = monthly(json.load(resp)["daily"])
-        except Exception as e:
-            failures += 1
-            print(f"  ! {s['name']}: {e}", flush=True)
-        if i % 10 == 0:
-            write(data)
-            print(f"  {i}/{len(todo)} stations", flush=True)
-        if i < len(todo):
-            time.sleep(PAUSE)
+    with progress.bar("weather") as bar:
+        for i, s in enumerate(todo, 1):
+            bar.update((i - 1) / len(todo), f"{i}/{len(todo)} · {s['name']}")
+            req = urllib.request.Request(URL.format(lat=s["lat"], lon=s["lon"]), headers={"User-Agent": USER_AGENT})
+            try:
+                with urllib.request.urlopen(req, timeout=60) as resp:
+                    data["stations"][str(s["id"])] = monthly(json.load(resp)["daily"])
+            except Exception as e:
+                failures += 1
+                progress.say(f"  ! {s['name']}: {e}")
+            if i % 10 == 0:
+                write(data)
+            if i < len(todo):
+                time.sleep(PAUSE)
 
-    write(data)
-    print(f"Saved weather for {len(data['stations'])} stations ({failures} failed)", flush=True)
+        write(data)
+        bar.done(f"{len(todo) - failures} new, {len(data['stations'])} stations saved" + (f", {failures} failed" if failures else ""))
     return 0 if failures <= len(todo) // 5 else 1
 
 

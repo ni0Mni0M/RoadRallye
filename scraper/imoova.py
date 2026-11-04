@@ -25,7 +25,7 @@ QUERY = """
 query RelocationList($first: Int!, $page: Int, $regions: [Region!],
                      $status: [RelocationStatus!], $type: [RelocationType!]) {
   relocations(first: $first, page: $page, regions: $regions, status: $status, type: $type) {
-    paginatorInfo { hasMorePages }
+    paginatorInfo { hasMorePages lastPage }
     data {
       id
       earliest_departure_date
@@ -43,8 +43,9 @@ query RelocationList($first: Int!, $page: Int, $regions: [Region!],
 """
 
 
-def fetch_relocations(client, **filters):
-    """Every bookable relocation matching `filters` (regions), page by page."""
+def fetch_relocations(client, on_page=None, **filters):
+    """Every bookable relocation matching `filters` (regions), page by page.
+    on_page(page, last_page, found_so_far) is called after each page, for the progress bar."""
     found, page = [], 1
     while True:
         variables = {"first": PAGE_SIZE, "page": page, "status": ["READY"], "type": ["RELOCATION"], **filters}
@@ -53,6 +54,8 @@ def fetch_relocations(client, **filters):
             raise RuntimeError(f"Imoova answered without relocations: {(body or {}).get('errors')}")
         result = body["data"]["relocations"]
         found += result["data"]
+        if on_page:
+            on_page(page, max(page, result["paginatorInfo"].get("lastPage") or page), len(found))
         if not result["paginatorInfo"]["hasMorePages"]:
             return found
         page += 1
@@ -115,11 +118,15 @@ def to_rallies(relocations, today=None):
     return list(best.values())
 
 
-def fetch_all(client, log):
+def fetch_all(client, log, bar=None):
+    """log(text) prints notes; bar (a progress.Progress, optional) shows how far it got."""
     relocations = []
-    for region in REGIONS:
-        found = fetch_relocations(client, regions=[region])
-        log(f"  {region}: {len(found)} relocations")
+    for i, region in enumerate(REGIONS):
+        def on_page(page, last, count, i=i, region=region):
+            if bar:
+                bar.update((i + page / last) / len(REGIONS), f"{region} page {page}/{last} · {len(relocations) + count} relocations")
+
+        found = fetch_relocations(client, on_page, regions=[region])
         relocations += found
     companies = Counter(company(r["supplier"]) for r in relocations if r.get("supplier"))
     log("  by company: " + ", ".join(f"{name} {n}" for name, n in companies.most_common()))
