@@ -303,7 +303,7 @@ def describe_route(a, b, refs, pause):
         if any(segment_km(p, s[0], s[1]) <= COAST_KM for s in segs):
             coast_points += 1
 
-    # id -> (km, name of the nearest part), so each site is named after what you actually pass.
+    # id -> (km, name, lat, lon of the nearest part), so each site is named after what you actually pass.
     found = {"parks": {}, "unesco": {}}
     for kind, hits in found.items():
         pois, grid = refs[kind]
@@ -312,7 +312,7 @@ def describe_route(a, b, refs, pause):
                 for pid, lat, lon, name in grid.get(key, []):
                     d = km_between(p, (lat, lon))
                     if d <= POI_KM and (pid not in hits or d < hits[pid][0]):
-                        hits[pid] = (d, name or pois[pid]["name"])
+                        hits[pid] = (d, name or pois[pid]["name"], lat, lon)
 
     heights = []
     elev_points = samples[::ELEVATION_EVERY]
@@ -329,10 +329,46 @@ def describe_route(a, b, refs, pause):
         "coastKm": coast_points * SAMPLE_KM,
         "mountainKm": sum(1 for h in heights if h >= MOUNTAIN_M) * SAMPLE_KM * ELEVATION_EVERY,
         "maxElevation": round(max(heights)) if heights else None,
-        # [id, name] pairs: the id tells the app when two legs pass the same site.
-        "parks": sorted([pid, name] for pid, (_, name) in found["parks"].items()),
-        "unesco": sorted([pid, name] for pid, (_, name) in found["unesco"].items()),
+        # [id, name, lat, lon]: the id tells the app when two legs pass the same site, the position
+        # (of the part nearest the road) puts it on the map.
+        "parks": sorted(site_entry(pid, *hit[1:]) for pid, hit in found["parks"].items()),
+        "unesco": sorted(site_entry(pid, *hit[1:]) for pid, hit in found["unesco"].items()),
     }
+
+
+def site_entry(pid, name, lat, lon):
+    return [pid, name, round(lat, 4), round(lon, 4)]
+
+
+def needs_positions(info):
+    """Routes saved before site positions were kept list their sites as [id, name]."""
+    return any(len(site) < 4 for kind in ("parks", "unesco") for site in info.get(kind, []))
+
+
+def add_positions(info, a, b, refs):
+    """Give the sites of one saved route ([id, name]) a position, without downloading anything: the part
+    with that name nearest the straight line between the two stations (the road itself isn't saved).
+    Sites no longer in the reference data get None, so they aren't looked up again. Returns how many."""
+    line = resample([(a["lat"], a["lon"]), (b["lat"], b["lon"])], SAMPLE_KM)
+    added = 0
+    for kind in ("parks", "unesco"):
+        pois = refs[kind][0]
+        sites = []
+        for site in info.get(kind, []):
+            if len(site) < 4:
+                pid, name = site[0], site[1]
+                poi = pois.get(pid)
+                if poi:
+                    named = [(lat, lon) for lat, lon, part in poi["points"] if (part or poi["name"]) == name]
+                    points = named or [(lat, lon) for lat, lon, _ in poi["points"]]
+                    lat, lon = min(points, key=lambda p: min(km_between(p, s) for s in line))
+                    site = site_entry(pid, name, lat, lon)
+                    added += 1
+                else:
+                    site = [pid, name, None, None]
+            sites.append(site)
+        info[kind] = sites
+    return added
 
 
 def write(data):
@@ -347,6 +383,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--limit", type=int, default=0, help="only work out this many new routes (for testing)")
     parser.add_argument("--pause", type=float, default=1.1, help="seconds between routing requests (OSRM asks for at most 1/s)")
+    parser.add_argument("--positions-only", action="store_true",
+                        help="only add map positions to the sites of saved routes, no new routes (no downloads)")
     args = parser.parse_args()
 
     rallies = json.loads((DATA_DIR / "rallies.json").read_text("utf-8"))
@@ -358,10 +396,11 @@ def main():
 
     out_path = DATA_DIR / "routes.json"
     data = json.loads(out_path.read_text("utf-8")) if out_path.exists() else {"routes": {}}
-    todo = [p for p in pairs if f"{p[0]}-{p[1]}" not in data["routes"]]
+    todo = [] if args.positions_only else [p for p in pairs if f"{p[0]}-{p[1]}" not in data["routes"]]
     if args.limit:
         todo = todo[:args.limit]
-    if not todo:
+    unplaced = [(a, b) for a, b in pairs if f"{a}-{b}" in data["routes"] and needs_positions(data["routes"][f"{a}-{b}"])]
+    if not todo and not unplaced:
         progress.item("routes", f"all {len(pairs)} already saved")
         return 0
 
@@ -372,12 +411,21 @@ def main():
         ("parks", "national parks", lambda: load_pois("parks")),
         ("unesco", "World Heritage sites", lambda: load_pois("unesco")),
     ]
+    if not todo:
+        loaders = loaders[2:]  # placing sites only needs the sites
     refs = {}
     with progress.bar("reference data") as bar:
         for i, (key, name, load) in enumerate(loaders):
             bar.update(i / len(loaders), name)
             refs[key] = load()
-        bar.done("borders, coast, parks, World Heritage sites")
+        bar.done(", ".join(name for _, name, _ in loaders))
+
+    if unplaced:
+        placed = sum(add_positions(data["routes"][f"{a}-{b}"], stations[a], stations[b], refs) for a, b in unplaced)
+        write(data)
+        progress.item("site positions", f"{placed} parks and World Heritage sites placed on {len(unplaced)} routes")
+    if not todo:
+        return 0
 
     failures = 0
     with progress.bar("routes") as bar:

@@ -10,6 +10,8 @@
   --mid: #c96a00;
   --hop: #858a93;
   --far: #a8a69f;
+  --park: #4d7c0f;
+  --heritage: #a8456f;
   --danger: #b8392a;
   --warn-bg: #fff3dc;
   --warn: #7a4a00;
@@ -31,6 +33,8 @@
     --mid: #f2a33a;
     --hop: #9ca1aa;
     --far: #6f6d67;
+    --park: #9ccc4a;
+    --heritage: #e58db3;
     --danger: #f07a68;
     --warn-bg: #3a2a0d;
     --warn: #f3c56b;
@@ -50,6 +54,8 @@
   --mid: #f2a33a;
   --hop: #9ca1aa;
   --far: #6f6d67;
+  --park: #9ccc4a;
+  --heritage: #e58db3;
   --danger: #f07a68;
   --warn-bg: #3a2a0d;
   --warn: #f3c56b;
@@ -442,6 +448,20 @@ input[type="range"] { width: 100%; margin: 4px 0; accent-color: var(--text); }
 .wh-links { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .wh-credit a { color: inherit; }
 
+/* "Along the way" inside the selected trip: each rally, and the weather where you stop */
+
+.along { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--line); cursor: default; }
+.along h4 { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
+.along-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.along-list li { padding-left: 10px; border-left: 3px solid var(--line); }
+.along-leg.out { border-left-color: var(--out); }
+.along-leg.mid { border-left-color: var(--mid); }
+.along-leg.back { border-left-color: var(--back); }
+.along-stop { border-left-style: dotted; }
+.along-main { margin: 0; font-size: 13px; font-weight: 500; }
+.along-detail { margin: 2px 0 0; font-size: 12.5px; color: var(--muted); }
+.more-names { padding: 0; font: inherit; color: inherit; background: none; border: 0; text-decoration: underline; cursor: pointer; }
+
 .wh-options { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 
 .wh-option {
@@ -556,6 +576,9 @@ input[type="range"] { width: 100%; margin: 4px 0; accent-color: var(--text); }
 .swatch.ring { width: 12px; height: 12px; border-radius: 50%; border: 1.5px dashed; }
 .swatch.ring.out { border-color: var(--out); }
 .swatch.ring.back { border-color: var(--back); }
+.swatch.site { width: 10px; height: 10px; }
+.swatch.site.park { background: var(--park); clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+.swatch.site.unesco { background: var(--heritage); clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); }
 
 /* Leaflet overrides */
 
@@ -615,6 +638,24 @@ input[type="range"] { width: 100%; margin: 4px 0; accent-color: var(--text); }
 }
 .station-menu button:hover { border-color: var(--muted); }
 .station-menu button[data-action="home"] { border-color: var(--out); }
+
+/* Typical weather by month in the station menu */
+.wx { margin: 6px 0 8px; min-width: 190px; }
+.wx-bars, .wx-months { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 2px; }
+.wx-bars { height: 40px; align-items: end; }
+.wx-bars i { display: block; background: var(--far); border-radius: 2px 2px 0 0; }
+.wx-bars i.on { background: var(--out); }
+.wx-months span { font-size: 10.5px; color: var(--muted); text-align: center; }
+.station-menu .wx-note { margin: 4px 0 0; color: var(--text); }
+.station-menu .wx-credit { margin: 2px 0 0; font-size: 11.5px; }
+.wx-credit a { color: inherit; }
+
+/* National parks and World Heritage sites along the selected trip */
+.site-pin { background: transparent; border: 0; }
+.site-pin svg { display: block; overflow: visible; }
+.site-pin path { fill: currentColor; stroke: var(--panel); stroke-width: 1.5; stroke-linejoin: round; }
+.site-pin.park { color: var(--park); }
+.site-pin.unesco { color: var(--heritage); }
 
 .leaflet-control-zoom a, .leaflet-control-attribution {
   background: var(--panel) !important;

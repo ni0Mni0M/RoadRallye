@@ -53,6 +53,8 @@
    *        costs: { rallyFee, insurancePerDay, vanLitresPer100Km, fuelPrice, priceEur } }
    * priceEur(leg) is the leg's listed price in euros (Imoova), or null to use roadsurfer's rally fee
    * and insurance instead.
+   * Besides the totals it returns `legs` (what each rally drives through, for "Along the way") and
+   * `sites` (the parks and World Heritage sites with a position, for the map).
    */
   function tripFacts(t, ctx) {
     let roadKm = 0;
@@ -64,8 +66,15 @@
     const countries = [];
     const parks = new Map();
     const unesco = new Map();
+    const sites = new Map(); // id -> { kind, id, name, lat, lon }
+    const legs = [];
     const addCountry = (code) => {
       if (code && !countries.includes(code)) countries.push(code);
+    };
+    const addSites = (kind, list) => {
+      for (const [id, name, lat, lon] of list) {
+        if (typeof lat === "number" && typeof lon === "number" && !sites.has(id)) sites.set(id, { kind, id, name, lat, lon });
+      }
     };
 
     addCountry(ctx.stations.get(t.legs[0].from).country);
@@ -80,23 +89,44 @@
       const listed = ctx.costs.priceEur ? ctx.costs.priceEur(leg) : null;
       const rental = listed !== null ? listed : ctx.costs.rallyFee + ctx.costs.insurancePerDay * days;
       cost += rental + ((km * ctx.costs.vanLitresPer100Km) / 100) * ctx.costs.fuelPrice;
+      // Route info is stored in the direction from the lower to the higher id.
+      const legCountries = info ? (idBefore(leg.from, leg.to) ? info.countries : [...info.countries].reverse()) : [];
       if (info) {
-        // Route info is stored in the direction from the lower to the higher id.
-        (idBefore(leg.from, leg.to) ? info.countries : [...info.countries].reverse()).forEach(addCountry);
+        legCountries.forEach(addCountry);
         for (const [id, name] of info.parks) parks.set(id, name);
         for (const [id, name] of info.unesco) unesco.set(id, name);
+        addSites("park", info.parks);
+        addSites("unesco", info.unesco);
         coastKm += info.coastKm;
         mountainKm += info.mountainKm;
       } else {
         measured = false;
       }
       addCountry(b.country);
+      legs.push({
+        from: leg.from,
+        to: leg.to,
+        km,
+        measured: Boolean(info),
+        drivingMin: info && typeof info.min === "number" ? info.min : null,
+        countries: info ? legCountries : [a.country, b.country].filter((c, i, all) => c && all.indexOf(c) === i),
+        parks: info ? info.parks.map((p) => p[1]) : [],
+        unesco: info ? info.unesco.map((p) => p[1]) : [],
+        coastKm: info ? info.coastKm : null,
+        mountainKm: info ? info.mountainKm : null,
+        maxElevation: info && typeof info.maxElevation === "number" ? info.maxElevation : null,
+      });
     }
+    const drivingMin = legs.every((l) => l.drivingMin !== null) ? legs.reduce((s, l) => s + l.drivingMin, 0) : null;
 
     return {
       roadKm,
       rallyDays,
       kmPerDay: roadKm / Math.max(1, rallyDays),
+      drivingMin,
+      drivingMinPerDay: drivingMin === null ? null : drivingMin / Math.max(1, rallyDays),
+      legs,
+      sites: [...sites.values()],
       cost,
       costPerDay: cost / Math.max(1, t.totalDays),
       countries,
@@ -232,6 +262,14 @@
     return rows;
   }
 
+  // Typical weather at a station in the month of a date: { month 0-11, t, rain, sun }, or null without data.
+  function weatherFor(climate, id, iso) {
+    const months = climate && climate.stations[String(id)];
+    if (!months) return null;
+    const month = Number(iso.slice(5, 7)) - 1;
+    return { month, ...months[month] };
+  }
+
   // First day whose newly seen rallies count as new, or null while nothing can be new yet.
   function freshSince(fetchedAt, trackingSince) {
     if (!trackingSince || fetchedAt.slice(0, 10) <= trackingSince) return null;
@@ -240,5 +278,5 @@
     return since > trackingSince ? since : M.addDays(trackingSince, 1);
   }
 
-  return { METRICS, SCENIC_WEIGHTS, FRESH_DAYS, routeKey, stopsOf, tripFacts, rankStations, percentiles, freshSince };
+  return { METRICS, SCENIC_WEIGHTS, FRESH_DAYS, routeKey, stopsOf, tripFacts, rankStations, percentiles, freshSince, weatherFor };
 });

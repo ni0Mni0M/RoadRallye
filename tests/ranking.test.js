@@ -107,6 +107,44 @@ test("without route data distances are estimated and there is no scenic score", 
   assert.ok(f.roadKm > 3500 && f.roadKm < 6000);
 });
 
+test("each leg keeps its own distance, countries and scenery, in travel order", () => {
+  const timed = Object.fromEntries(Object.entries(routes).map(([k, v]) => [k, { ...v, min: 1200, maxElevation: 1400 }]));
+  const f = R.tripFacts(madridHome(), { stations, routes: timed, costs });
+  assert.equal(f.legs.length, 2);
+  assert.deepEqual(f.legs[0], {
+    from: 51, to: 20, km: 2300, measured: true, drivingMin: 1200, countries: ["DE", "FR", "ES"],
+    parks: ["Park One"], unesco: ["Site One"], coastKm: 0, mountainKm: 100, maxElevation: 1400,
+  });
+  assert.deepEqual(f.legs[1].countries, ["ES", "FR", "DE"]);
+  assert.equal(f.drivingMin, 2400);
+  assert.equal(f.drivingMinPerDay, 2400 / 14);
+});
+
+test("driving time is only given when every leg has route data", () => {
+  const f = R.tripFacts(madridHome(), { stations, routes, costs }); // the fixture has no driving times
+  assert.equal(f.drivingMin, null);
+  assert.equal(f.drivingMinPerDay, null);
+  const none = R.tripFacts(madridHome(), { stations, routes: null, costs });
+  assert.equal(none.legs[0].measured, false);
+  assert.deepEqual(none.legs[0].countries, ["DE", "ES"]);
+});
+
+test("sites with a position go on the map once, sites without one don't", () => {
+  const placed = {
+    ...routes,
+    "20-51": { ...routes["20-51"], parks: [["Q1", "Park One", 42.1, -1.5]], unesco: [["whc1", "Site One", null, null]] },
+    "6-20": { ...routes["6-20"], parks: [["Q1", "Park One", 42.1, -1.5]] },
+  };
+  const f = R.tripFacts(madridHome(), { stations, routes: placed, costs });
+  assert.deepEqual(f.sites, [{ kind: "park", id: "Q1", name: "Park One", lat: 42.1, lon: -1.5 }]);
+});
+
+test("weather for a station in the month of a date", () => {
+  assert.deepEqual(R.weatherFor(climate, 20, "2026-11-10"), { month: 10, t: 19, rain: 4, sun: 6 });
+  assert.equal(R.weatherFor(climate, 6, "2026-11-10"), null);
+  assert.equal(R.weatherFor(null, 20, "2026-11-10"), null);
+});
+
 test("route keys put roadsurfer's numeric ids before Imoova's text ids", () => {
   assert.equal(R.routeKey(20, 6), "6-20");
   assert.equal(R.routeKey("imoova-5", 20), "20-imoova-5");

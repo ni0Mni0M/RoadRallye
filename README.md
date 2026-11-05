@@ -36,7 +36,13 @@ stations that lines up with the other two. A bigger start radius, more waiting d
 hop finds more of them.
 
 Click a trip to see it animated on the map; **Play all** cycles through the list.
-Click a station on the map for a small menu: **Set as home** (with how many round trips you'd get
+The selected trip also shows **Along the way**: for each rally the road distance, driving time,
+countries, national parks and World Heritage sites passed, km by the sea or above 1,000 m and the
+highest point; for each stop the typical weather in the month you're there; and the average driving
+time per day. The parks (triangles) and World Heritage sites (diamonds) are marked on the map. The
+map draws each rally as an arc, not the actual road, so the marks sit along the real road, not on the arc.
+Click a station on the map for a small menu: its typical daytime highs for each month (the months of
+your dates marked), **Set as home** (with how many round trips you'd get
 from there) and, for the green stations, **Trips via ...** to list only trips that stop there.
 An Imoova city next to a roadsurfer station sets that roadsurfer station as home. Each leg has a **Book** link
 that opens the provider's booking page for exactly that rally. Settings are remembered in the browser.
@@ -153,7 +159,9 @@ The rules for this are in `CLAUDE.md`.
   countries crossed and the coast nearby (Natural Earth), height above sea level (Open-Meteo),
   national parks (Wikidata) and World Heritage sites (OpenStreetMap) within 10 km. Parks and World
   Heritage sites are only looked up in Europe, so North American routes score on coast and mountains only.
-  Saved as `web/data/routes.json`; downloads are cached in `scraper/cache/`.
+  Each site is saved with the position of its part nearest the road, for the map. Saved as
+  `web/data/routes.json`; downloads are cached in `scraper/cache/`. Routes saved before positions
+  were kept get them from that cache on the next run (`--positions-only` does just that, no downloads).
 - `scraper/fetch_climate.py` saves typical monthly weather per station from Open-Meteo
   (`web/data/climate.json`).
 - `web/matching.js` chains rallies into round trips (distances use the stations' coordinates).

@@ -115,7 +115,7 @@
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
   }).addTo(map);
 
-  for (const [name, z] of [["areas", 405], ["overview", 410], ["stations", 420], ["wayhome", 425], ["trip", 430]]) {
+  for (const [name, z] of [["areas", 405], ["overview", 410], ["stations", 420], ["wayhome", 425], ["sites", 428], ["trip", 430]]) {
     map.createPane(name).style.zIndex = z;
   }
   map.getPane("areas").style.pointerEvents = "none";
@@ -149,6 +149,17 @@
     iconSize: [36, 36],
     iconAnchor: [18, 18],
   });
+
+  // National parks (a triangle, like a tree) and World Heritage sites (a diamond) along a selected trip.
+  const siteIcon = (kind, path) =>
+    L.divIcon({
+      className: `site-pin ${kind}`,
+      html: `<svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true"><path d="${path}"/></svg>`,
+      iconSize: [14, 14],
+      iconAnchor: [7, 7],
+    });
+  const SITE_ICONS = { park: siteIcon("park", "M7 1.5 12.8 12H1.2z"), unesco: siteIcon("unesco", "M7 1 13 7 7 13 1 7z") };
+  const SITE_KINDS = { park: "National park", unesco: "World Heritage site" };
 
   if (!data || !Array.isArray(data.rallies)) {
     $("dataInfo").textContent = "No rally data yet.";
@@ -1052,6 +1063,55 @@
     }
   }
 
+  // "about 9 °C highs, 2.1 h of sun a day, 8 rainy days" for one month of climate data.
+  function monthWeather(w) {
+    const parts = [];
+    if (w.t !== null) parts.push(`about ${Math.round(w.t)} °C highs`);
+    if (w.sun !== null) parts.push(`${w.sun} h of sun a day`);
+    if (w.rain !== null) parts.push(plural(Math.round(w.rain), "rainy day"));
+    return parts.join(", ");
+  }
+
+  // The months (0-11) the date filters cover, in order, to mark them in the weather strip.
+  function filterMonths() {
+    const out = new Set();
+    if (!settings.earliest || !settings.latest) return out;
+    let [y, m] = settings.earliest.split("-").map(Number);
+    const [lastY, lastM] = settings.latest.split("-").map(Number);
+    while (out.size < 12 && (y < lastY || (y === lastY && m <= lastM))) {
+      out.add(m - 1);
+      if (m === 12) [y, m] = [y + 1, 1];
+      else m++;
+    }
+    return out;
+  }
+
+  // Twelve bars of typical daytime highs for the station menu, with the months of your dates marked.
+  function weatherStripHtml(s) {
+    const months = climateData && climateData.stations[String(s.id)];
+    const temps = months ? months.map((w) => w.t).filter((t) => t !== null) : [];
+    if (!temps.length) return "";
+    const lo = Math.min(0, ...temps);
+    const hi = Math.max(30, ...temps); // one scale for most stations, so bars compare between them
+    const marked = filterMonths();
+    const bars = months
+      .map((w, i) => {
+        const h = w.t === null ? 0 : 3 + Math.round(((w.t - lo) / (hi - lo)) * 37);
+        return `<i class="${marked.has(i) ? "on" : ""}" style="height:${h}px" title="${MONTHS[i]}: ${esc(monthWeather(w))}"></i>`;
+      })
+      .join("");
+    const first = [...marked][0];
+    return (
+      '<div class="wx">' +
+      `<div class="wx-bars" aria-hidden="true">${bars}</div>` +
+      `<div class="wx-months" aria-hidden="true">${MONTHS.map((m) => `<span>${m[0]}</span>`).join("")}</div>` +
+      (first !== undefined ? `<p class="wx-note">${MONTHS[first]}: ${esc(monthWeather(months[first]))}</p>` : "") +
+      `<p class="wx-credit">Typical highs, ${esc(climateData.period)} average, your dates marked · ` +
+      '<a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo.com</a></p>' +
+      "</div>"
+    );
+  }
+
   // The menu a click on a station opens: make it the home station, or list only the trips that stop there.
   function stationMenu(s, viaCount) {
     const target = homeFor(s);
@@ -1059,6 +1119,7 @@
     const asHome = count === undefined ? "counting…" : plural(count, "round trip");
     const source = providersInData.length > 1 ? ` · ${esc(providerName(providerById.get(s.id)))}` : "";
     const lines = [`<p><strong>${esc(s.name)}</strong>${source}</p>`];
+    lines.push(weatherStripHtml(s));
     if (target.id === settings.home) {
       lines.push("<p>Your home station</p>");
     } else {
@@ -1119,6 +1180,23 @@
       .addTo(layers.trip);
   }
 
+  // The national parks and World Heritage sites the selected trip passes (within 10 km of the road).
+  function drawSites(t) {
+    const f = facts.get(t.id);
+    const sites = f ? f.sites : [];
+    for (const s of sites) {
+      L.marker([s.lat, s.lon], { pane: "sites", icon: SITE_ICONS[s.kind], keyboard: false })
+        .bindTooltip(`<strong>${esc(s.name)}</strong><br>${SITE_KINDS[s.kind]}`, { direction: "top", offset: [0, -6] })
+        .addTo(layers.trip);
+    }
+    showSiteLegend(sites);
+  }
+
+  function showSiteLegend(sites) {
+    $("legendParks").hidden = !sites.some((s) => s.kind === "park");
+    $("legendHeritage").hidden = !sites.some((s) => s.kind === "unesco");
+  }
+
   // Draws the selected trip and animates a van along it. Resolves when the animation ends.
   async function drawTrip(t, animate) {
     const token = ++animToken;
@@ -1174,6 +1252,7 @@
     }
     const end = t.legs[n - 1];
     stopMarker(at(end.to), COLORS.back, `${esc(at(end.to).name)} · ${fmtDay(end.return)}`);
+    drawSites(t);
 
     const flow = (line, kind) => {
       if (kind !== "hop") line.getElement()?.classList.add("flow");
@@ -1433,12 +1512,96 @@
     $("results").querySelector(`.wh-option[data-itinerary="${index}"]`)?.focus();
   }
 
-  // Puts an empty way-home panel into the selected card (re-rendering the list drops it).
-  function attachWayHome(t) {
-    for (const panel of $("results").querySelectorAll(".wayhome")) panel.remove();
+  // Puts "Along the way" and an empty way-home panel into the selected card (re-rendering the list drops them).
+  function attachPanels(t) {
+    for (const panel of $("results").querySelectorAll(".along, .wayhome")) panel.remove();
     const el = $("results").querySelector(".trip.selected");
+    if (el) el.insertAdjacentHTML("beforeend", alongHtml(t));
     if (el && settings.wayHome) el.insertAdjacentHTML("beforeend", '<section class="wayhome" aria-label="Getting home"></section>');
     renderWayHome(t);
+  }
+
+  // ---------- Along the way ----------
+
+  // Parks and World Heritage sites were only looked up in Europe.
+  const NO_SITE_LOOKUP = new Set(["US", "CA", "MX"]);
+  // "A, B, C, D, +14 more", where a click on "+14 more" shows the rest.
+  const nameList = (names, max = 4) =>
+    names.length <= max + 1
+      ? esc(names.join(", "))
+      : esc(names.slice(0, max).join(", ")) +
+        `<button type="button" class="more-names" data-more>, +${names.length - max} more</button>` +
+        `<span hidden>, ${esc(names.slice(max).join(", "))}</span>`;
+
+  function alongLegHtml(leg, kind, a, b) {
+    const main = leg.measured
+      ? `${fmtKm(leg.km)}${leg.drivingMin !== null ? ` · about ${fmtDuration(leg.drivingMin)} driving` : ""}`
+      : `about ${fmtKm(leg.km)}, estimated`;
+    const countries = leg.countries.length > 1 ? `<p class="along-detail">${esc(leg.countries.map(countryName).join(" → "))}</p>` : "";
+    const details = [];
+    if (!leg.measured) {
+      details.push("Road, scenery and driving time come with the next data update");
+    } else {
+      if (leg.parks.length) details.push(`National parks: ${nameList(leg.parks)}`);
+      if (leg.unesco.length) details.push(`World Heritage: ${nameList(leg.unesco)}`);
+      if (leg.coastKm) details.push(`${fmtKm(leg.coastKm)} by the sea`);
+      if (leg.mountainKm) details.push(`${fmtKm(leg.mountainKm)} above 1,000 m`);
+      if (leg.maxElevation !== null) details.push(`highest point ${leg.maxElevation.toLocaleString("en-GB")} m`);
+      if (NO_SITE_LOOKUP.has(a.country) || NO_SITE_LOOKUP.has(b.country)) {
+        details.push("parks and World Heritage sites are only looked up in Europe");
+      } else if (!leg.parks.length && !leg.unesco.length && !leg.coastKm && !leg.mountainKm) {
+        details.push("no national parks, World Heritage sites, coast or mountains near the road");
+      }
+    }
+    return (
+      `<li class="along-leg ${kind}">` +
+      `<p class="along-main">${esc(a.name)} → ${esc(b.name)} · ${main}</p>` +
+      countries +
+      `<p class="along-detail">${details.join(" · ")}</p>` +
+      "</li>"
+    );
+  }
+
+  // The weather where you stop between rallies, for the month you arrive.
+  function alongStopHtml(s, arrive, leave) {
+    const w = R.weatherFor(climateData, s.id, arrive);
+    const text = w && monthWeather(w)
+      ? `${monthWeather(w)} in ${MONTHS[w.month]} (${esc(climateData.period)} average)`
+      : "No weather data for this station yet";
+    const when = leave && leave !== arrive ? `${fmtDay(arrive)} – ${fmtDay(leave)}` : fmtDay(arrive);
+    return (
+      '<li class="along-stop">' +
+      `<p class="along-main">${esc(s.name)}, ${when}</p>` +
+      `<p class="along-detail">${text[0].toUpperCase()}${text.slice(1)}</p>` +
+      "</li>"
+    );
+  }
+
+  function alongHtml(t) {
+    const f = facts.get(t.id);
+    if (!f) return "";
+    const n = t.legs.length;
+    const items = [];
+    t.legs.forEach((r, i) => {
+      items.push(alongLegHtml(f.legs[i], legKind(i, n), stations.get(r.from), stations.get(r.to)));
+      if (i < n - 1) items.push(alongStopHtml(stations.get(r.to), r.return, t.legs[i + 1].pickup));
+    });
+    const summary =
+      f.drivingMinPerDay !== null
+        ? `<p class="wh-detail">About ${fmtDuration(f.drivingMinPerDay)} driving a day on average, ${fmtDuration(f.drivingMin)} in all.</p>`
+        : "";
+    const credits = [
+      routeData && '<a href="https://project-osrm.org/" target="_blank" rel="noopener">OSRM</a> (roads), Wikidata (national parks), OpenStreetMap (World Heritage sites)',
+      climateData && '<a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo.com</a> (weather)',
+    ].filter(Boolean);
+    return (
+      '<section class="along" aria-label="Along the way">' +
+      "<h4>Along the way</h4>" +
+      `<ol class="along-list">${items.join("")}</ol>` +
+      summary +
+      (credits.length ? `<p class="wh-credit">Sources: ${credits.join(", ")}</p>` : "") +
+      "</section>"
+    );
   }
 
   function setHomeMode(mode, retry) {
@@ -1466,7 +1629,7 @@
     for (const el of $("results").querySelectorAll(".trip.selected")) el.classList.remove("selected");
     const el = $("results").querySelector(`[data-id="${CSS.escape(id)}"]`);
     if (el) el.classList.add("selected");
-    attachWayHome(t);
+    attachPanels(t);
     if (el && scroll) el.scrollIntoView({ block: "nearest", behavior: reduceMotion ? "auto" : "smooth" });
     $("overview").hidden = false;
     return drawTrip(t, animate);
@@ -1477,7 +1640,8 @@
     animToken++;
     layers.trip.clearLayers();
     layers.wayHome.clearLayers();
-    for (const panel of $("results").querySelectorAll(".wayhome")) panel.remove();
+    for (const panel of $("results").querySelectorAll(".along, .wayhome")) panel.remove();
+    showSiteLegend([]);
     map.getContainer().classList.remove("dimmed");
     for (const el of $("results").querySelectorAll(".trip.selected")) el.classList.remove("selected");
     $("overview").hidden = true;
@@ -1528,12 +1692,18 @@
       chooseItinerary(Number(option.dataset.itinerary));
       return;
     }
-    if (e.target.closest(".wayhome")) return;
+    const more = e.target.closest("[data-more]");
+    if (more) {
+      more.nextElementSibling.hidden = false;
+      more.remove();
+      return;
+    }
+    if (e.target.closest(".wayhome, .along")) return;
     if (e.target.closest("#showMore")) {
       shown += PAGE_SIZE;
       renderList();
       const t = trips.find((x) => x.id === selectedId);
-      if (t) attachWayHome(t);
+      if (t) attachPanels(t);
       return;
     }
     const li = e.target.closest(".trip");
