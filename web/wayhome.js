@@ -7,6 +7,14 @@
   "use strict";
 
   /**
+   * Where the way home ends: the city's central station when the home station has one in
+   * `centers` (web/centers.js), because a rental depot is often far outside the city.
+   */
+  function homePoint(station, centers) {
+    return (centers && centers[station.id]) || station;
+  }
+
+  /**
    * Rough range for train and bus, from straight-line distance only (no timetable).
    * Rails run about 20 % longer than the straight line; long trips mostly use fast trains.
    */
@@ -89,6 +97,7 @@
   }
 
   return {
+    homePoint,
     transitEstimate,
     decodePolyline,
     summarizeItinerary,

@@ -33,7 +33,7 @@ but the map background may stay blank because OpenStreetMap only serves tiles to
 | Train hop between rallies | Lets the next rally start from a different station this far from where the previous one ended (e.g. arrive in Antwerp, take the train to Brussels). A roadsurfer station and an Imoova city less than 30 km apart always count as the same place ("Across town") |
 | Rentals from | Which providers to use: roadsurfer, Imoova or both |
 | Costs | roadsurfer's rally fee and insurance level, the van's diesel use and the fuel price, for the cost estimates (no tolls). Imoova legs use their listed price instead of the rally fee and insurance |
-| Way home | Adds a "Getting home" panel to the selected trip, from the last drop-off to your home station (see below) |
+| Way home | Adds a "Getting home" panel to the selected trip, from the last drop-off to the central station of your home city (see below) |
 
 A one-way chain never loops: each of its rallies ends outside the start area (at least 30 km from
 home) and away from every place the trip has already been. So Berlin → Madrid → Berlin is a round
@@ -108,7 +108,10 @@ site and 1 per 20 km by the sea or above 1,000 m, and the row always lists what 
 
 Tick **Plan how to get home** and select a trip. The panel compares two ways back from the
 last drop-off, and the chosen one is drawn on the map as a dashed line. A one-way trip ends far
-from home, so this is where you see what getting back takes:
+from home, so this is where you see what getting back takes. The way back ends at the central
+station of your home city (for example Berlin Hbf), not at the rental depot, which is often in a
+suburb or the next town. The stations are listed in `web/centers.js`; a roadsurfer city missing
+there falls back to the depot.
 
 | Mode | What you get |
 | --- | --- |
@@ -181,6 +184,7 @@ The rules for this are in `CLAUDE.md`.
 - `web/matching.js` chains rallies into one-way trips and round trips (distances use the stations' coordinates).
 - `web/ranking.js` turns those trips into per-station figures, costs and scenic scores.
 - `web/wayhome.js` holds the way-home estimates and links; the car route is fetched in `app.js`.
+- `web/centers.js` lists the central station of each roadsurfer city, where the way home ends.
 - `web/app.js` draws the filters, the lists, and the Leaflet map.
 - `serve.py` serves the site and forwards train and bus searches to Transitous (`/api/transit`).
 

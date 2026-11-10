@@ -6,6 +6,19 @@ const W = require("../web/wayhome.js");
 const MARBURG = { lat: 50.83, lon: 8.7708 };
 const BERLIN = { lat: 52.5629, lon: 13.3256 };
 
+test("the way home ends at the city's central station", () => {
+  const centers = require("../web/centers.js");
+  const depot = { id: 6, name: "Berlin", ...BERLIN };
+  assert.equal(W.homePoint(depot, centers).name, "Berlin Hbf");
+  // A station without an entry (an Imoova city centre, a new depot) stays as it is.
+  const imoova = { id: "imoova-12", name: "Lisbon", lat: 38.72, lon: -9.14 };
+  assert.equal(W.homePoint(imoova, centers), imoova);
+  assert.equal(W.homePoint(depot, undefined), depot);
+  for (const [id, c] of Object.entries(centers)) {
+    assert.ok(c.name && Math.abs(c.lat) <= 90 && Math.abs(c.lon) <= 180, `entry ${id}`);
+  }
+});
+
 test("transit estimate gives a sensible range", () => {
   const t = W.transitEstimate(MARBURG, BERLIN);
   assert.ok(t.lowMin < t.highMin);

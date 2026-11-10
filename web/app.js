@@ -1275,7 +1275,7 @@
     });
 
     const bounds = L.latLngBounds(legs.flatMap((l) => l.pts));
-    if (settings.wayHome) bounds.extend([stations.get(settings.home).lat, stations.get(settings.home).lon]);
+    if (settings.wayHome) bounds.extend([homeDest().lat, homeDest().lon]);
     map.fitBounds(bounds, {
       paddingTopLeft: [60, 80], // clear of the buttons
       paddingBottomRight: [60, 80], // and the legend
@@ -1346,6 +1346,10 @@
   // ---------- Way home ----------
 
   const lastLeg = (t) => t.legs[t.legs.length - 1];
+  // The way home ends at the home city's central station, not at the rental depot.
+  function homeDest() {
+    return W.homePoint(stations.get(settings.home), window.CityCenters);
+  }
   const driveKey = (a, b) => `${a.lat},${a.lon};${b.lat},${b.lon}`;
   const driveResults = new Map(); // driveKey -> { km, min, path } or { error: true }
   const driveRequests = new Map();
@@ -1516,9 +1520,9 @@
     if (!settings.wayHome || !panel) return;
 
     const end = stations.get(lastLeg(t).to);
-    const home = stations.get(settings.home);
+    const home = homeDest();
     const crowKm = M.haversineKm(end, home);
-    if (crowKm < 3) {
+    if (crowKm < 3 || M.haversineKm(end, stations.get(settings.home)) < 3) {
       panel.innerHTML = "<p class=\"wh-detail\">The last van goes back to your home station, so you're home already.</p>";
       return;
     }
@@ -1567,7 +1571,7 @@
     const t = trips.find((x) => x.id === selectedId);
     if (!t) return;
     const leaveAfter = new Date(`${lastLeg(t).return}T${settings.dropoffTime}:00`).toISOString();
-    itineraryChoice.set(transitKey(stations.get(lastLeg(t).to), stations.get(settings.home), leaveAfter), index);
+    itineraryChoice.set(transitKey(stations.get(lastLeg(t).to), homeDest(), leaveAfter), index);
     renderWayHome(t);
     $("results").querySelector(`.wh-option[data-itinerary="${index}"]`)?.focus();
   }
@@ -1671,7 +1675,7 @@
     if (!t || !HOME_MODES.includes(mode)) return;
     if (retry) {
       const end = stations.get(lastLeg(t).to);
-      const home = stations.get(settings.home);
+      const home = homeDest();
       driveResults.delete(driveKey(end, home));
       transitResults.delete(transitKey(end, home, new Date(`${lastLeg(t).return}T${settings.dropoffTime}:00`).toISOString()));
     }
