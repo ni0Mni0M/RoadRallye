@@ -64,6 +64,9 @@
 
 * { box-sizing: border-box; }
 
+/* Fields that a kind of trip doesn't use are hidden; without this, "display: flex" would keep them. */
+[hidden] { display: none !important; }
+
 html, body { height: 100%; margin: 0; }
 
 body {
@@ -176,6 +179,26 @@ input[type="range"] { width: 100%; margin: 4px 0; accent-color: var(--text); }
 }
 
 .segmented input:focus-visible + span { outline: 2px solid var(--out); outline-offset: 1px; }
+
+/* One-way | Round trip: the first choice, above all filters, so it is the boldest control */
+
+.trip-type { margin-top: 16px; }
+.type-switch { padding: 4px; }
+
+.type-switch span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 8px 4px;
+  font-size: 14px;
+}
+
+.type-switch svg { flex: none; }
+.type-switch path { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.type-switch input:checked + span { background: var(--text); color: var(--panel); box-shadow: none; }
+.trip-type .hint { margin-top: 8px; }
+
 .slider-out input[type="range"] { accent-color: var(--out); }
 .slider-back input[type="range"] { accent-color: var(--back); }
 .slider-hop input[type="range"] { accent-color: var(--hop); }

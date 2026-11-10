@@ -1,4 +1,4 @@
-// Station ranking: per-station figures from the round trips that matching.js finds.
+// Station ranking: per-station figures from the trips that matching.js finds.
 // Works as a plain <script> in the browser (window.RallyRanking) and as a Node module (tests).
 (function (root, factory) {
   if (typeof module === "object" && module.exports) module.exports = factory(require("./matching.js"));
@@ -13,11 +13,13 @@
   const SCENIC_WEIGHTS = { park: 3, unesco: 2, coastKm: 1 / 20, mountainKm: 1 / 20 };
 
   // better: which end of the scale wins. modes: which list it applies to. needs: extra data.
+  // types: the kinds of trip it says something about (both when left out). Backups are the ways back
+  // after an outbound rally and a stay is the time between two rallies, so neither fits one-way trips.
   const METRICS = {
     dates: { group: "Opportunities", label: "Most departure dates", better: "high", modes: ["destinations", "starts"] },
-    backups: { group: "Opportunities", label: "Most backup options", better: "high", modes: ["destinations", "starts"] },
-    trips: { group: "Opportunities", label: "Most round trips", better: "high", modes: ["destinations", "starts"] },
-    stay: { group: "Time there", label: "Longest stay", better: "high", modes: ["destinations"] },
+    backups: { group: "Opportunities", label: "Most backup options", better: "high", modes: ["destinations", "starts"], types: ["round"] },
+    trips: { group: "Opportunities", label: "Most trips", better: "high", modes: ["destinations", "starts"] },
+    stay: { group: "Time there", label: "Longest stay", better: "high", modes: ["destinations"], types: ["round"] },
     pace: { group: "Pace", label: "Most relaxed pace", better: "low", modes: ["destinations", "starts"] },
     distance: { group: "Adventure", label: "Farthest from home", better: "high", modes: ["destinations"] },
     countries: { group: "Adventure", label: "Most countries", better: "high", modes: ["destinations", "starts"] },
@@ -37,13 +39,21 @@
   const routeKey = (a, b) => (idBefore(a, b) ? `${a}-${b}` : `${b}-${a}`);
   const legKey = (r) => `${r.from}-${r.to}-${r.pickup}`;
 
-  // Stations a trip stops at between rallies (drop-off and, after a train hop, the next pickup).
+  // Whether a metric says anything in this list ("destinations" | "starts") for this kind of trip.
+  function metricApplies(key, mode, tripType = "round") {
+    const m = METRICS[key];
+    return Boolean(m) && m.modes.includes(mode) && (!m.types || m.types.includes(tripType));
+  }
+
+  // Stations a trip takes you to: where it stops between rallies (drop-off and, after a train hop,
+  // the next pickup) and, for a one-way trip, where it ends. A round trip ends back home.
   function stopsOf(t) {
     const stops = new Set();
     for (let i = 0; i < t.legs.length - 1; i++) {
       stops.add(t.legs[i].to);
       stops.add(t.legs[i + 1].from);
     }
+    if (t.type === "oneway") stops.add(t.legs[t.legs.length - 1].to);
     return stops;
   }
 
@@ -150,6 +160,7 @@
   function stationRow(id, list, ctx, opts) {
     const station = ctx.stations.get(id);
     const facts = (t) => ctx.facts.get(t.id);
+    const applies = (key) => metricApplies(key, opts.mode, opts.tripType);
     const dates = [...new Set(list.map((t) => t.legs[0].pickup))].sort();
 
     const byFirstLeg = new Map();
@@ -163,6 +174,9 @@
         if (t.legs[i].to === id || t.legs[i + 1].from === id) stay = Math.max(stay, t.waits[i]);
         if (t.legs[i].to === id) arrivals.push(t.legs[i].return);
       }
+      // A one-way trip also arrives where it ends.
+      const end = t.legs[t.legs.length - 1];
+      if (t.type === "oneway" && end.to === id) arrivals.push(end.return);
     }
     const months = arrivals.map((d) => Number(d.slice(5, 7)) - 1);
     const climate = opts.climate && opts.climate.stations[String(id)];
@@ -182,9 +196,9 @@
       dateList: dates,
       values: {
         dates: dates.length,
-        backups: Math.round(mean([...byFirstLeg.values()]) * 10) / 10,
+        backups: applies("backups") ? Math.round(mean([...byFirstLeg.values()]) * 10) / 10 : null,
         trips: list.length,
-        stay: opts.mode === "destinations" ? stay : null,
+        stay: applies("stay") ? stay : null,
         pace: facts(relaxedTrip).kmPerDay,
         distance: opts.mode === "destinations" ? M.haversineKm(opts.home, station) : null,
         countries: facts(countryTrip).countries.length,
@@ -218,8 +232,8 @@
 
   /**
    * Ranks stations by one metric, or by several combined.
-   * opts: { mode: "destinations" | "starts", by: metric key | "combined", combine: [keys],
-   *         home, today, freshSince, climate }
+   * opts: { mode: "destinations" | "starts", tripType: "round" (default) | "oneway",
+   *         by: metric key | "combined", combine: [keys], home, today, freshSince, climate }
    * ctx:  { stations, facts: Map trip id -> tripFacts }
    * Returns rows best first, each with `rank`, `values` and, when combined, `parts` (key -> 0..1).
    */
@@ -236,7 +250,7 @@
 
     let score;
     if (opts.by === "combined") {
-      const keys = (opts.combine || []).filter((k) => METRICS[k] && METRICS[k].modes.includes(opts.mode));
+      const keys = (opts.combine || []).filter((k) => metricApplies(k, opts.mode, opts.tripType));
       const tables = keys.map((k) => [k, percentiles(rows, k)]);
       for (const r of rows) {
         r.parts = {};
@@ -278,5 +292,8 @@
     return since > trackingSince ? since : M.addDays(trackingSince, 1);
   }
 
-  return { METRICS, SCENIC_WEIGHTS, FRESH_DAYS, routeKey, stopsOf, tripFacts, rankStations, percentiles, freshSince, weatherFor };
+  return {
+    METRICS, SCENIC_WEIGHTS, FRESH_DAYS, routeKey, metricApplies, stopsOf, tripFacts, rankStations, percentiles,
+    freshSince, weatherFor,
+  };
 });

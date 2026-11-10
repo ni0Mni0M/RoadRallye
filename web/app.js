@@ -95,8 +95,9 @@
     return `${half(Math.floor(lowMin / 30) / 2)}–${half(Math.ceil(highMin / 30) / 2)} h`;
   }
 
-  // First leg is "out", last is "back", anything in between is "mid".
-  const legKind = (i, n) => (i === 0 ? "out" : i === n - 1 ? "back" : "mid");
+  // What rally i is to its trip, for the colours. The first is "out". In a round trip the last is "back"
+  // and one in between "mid"; in a one-way trip every later rally is "mid" (onward), as none comes back.
+  const legKind = (t, i) => (i === 0 ? "out" : t.type !== "oneway" && i === t.legs.length - 1 ? "back" : "mid");
 
   const stopsOf = R.stopsOf;
 
@@ -200,7 +201,9 @@
     latest: M.addDays(today, 60),
     maxWait: 2,
     hopRadius: 0,
-    legs: "2",
+    tripType: "oneway",
+    legs: "2", // rallies per round trip
+    legsOneWay: "1", // rallies per one-way trip
     sort: "start",
     wayHome: false,
     homeMode: "transit",
@@ -219,7 +222,9 @@
     hideVisited: false,
   };
   const TIME_OF_DAY = /^\d\d:\d\d$/;
+  const TRIP_TYPES = ["oneway", "round"];
   const LEG_CHOICES = ["2", "2-3", "3"];
+  const ONE_WAY_LEG_CHOICES = ["1", "1-2", "1-3"]; // one rally, or chains of up to 2 or 3
   const HOME_MODES = ["transit", "car"];
   const RANK_CHOICES = [...Object.keys(R.METRICS), "favourites", "combined"];
 
@@ -233,7 +238,9 @@
     const s = { ...DEFAULTS, ...saved };
     if (!homeById.has(String(s.home))) s.home = DEFAULTS.home;
     if (!Array.isArray(s.hideProviders)) s.hideProviders = [];
+    if (!TRIP_TYPES.includes(s.tripType)) s.tripType = DEFAULTS.tripType;
     if (!LEG_CHOICES.includes(s.legs)) s.legs = DEFAULTS.legs;
+    if (!ONE_WAY_LEG_CHOICES.includes(s.legsOneWay)) s.legsOneWay = DEFAULTS.legsOneWay;
     if (!HOME_MODES.includes(s.homeMode)) s.homeMode = DEFAULTS.homeMode;
     s.wayHome = s.wayHome === true;
     if (!TIME_OF_DAY.test(s.dropoffTime)) s.dropoffTime = DEFAULTS.dropoffTime;
@@ -291,6 +298,13 @@
   let playToken = 0;
   let playing = false;
 
+  // What differs between the two kinds of trip.
+  const oneWay = () => settings.tripType === "oneway";
+  const tripWord = () => (oneWay() ? "one-way trip" : "round trip");
+  const maxLegs = () => (oneWay() ? ONE_WAY_LEG_CHOICES.indexOf(settings.legsOneWay) + 1 : settings.legs === "2" ? 2 : 3);
+  // A round trip only passes through the places it stops at; a one-way trip also ends at one.
+  const viaWord = () => (!oneWay() ? "via" : maxLegs() === 1 ? "to" : "to or via");
+
   // ---------- Form ----------
 
   function fillHomeSelect() {
@@ -335,12 +349,13 @@
     "startRadius", "returnRadius", "maxWait", "hopRadius", "carConsumption", "fuelPrice",
     "rallyFee", "insurance", "vanConsumption",
   ]);
+  const RADIOS = ["tripType", "legs", "legsOneWay"]; // the segmented choices inside the filter form
   // Chosen outside the filter form (view switch, ranking controls), so readForm keeps them.
   const OUTSIDE_FORM = ["homeMode", "view", "rankMode", "rankBy", "combine", "onlyFavs", "hideVisited"];
 
   function writeForm() {
     for (const key of FIELDS) $(key).value = settings[key];
-    $("filters").elements.legs.value = settings.legs;
+    for (const key of RADIOS) $("filters").elements[key].value = settings[key];
     $("wayHome").checked = settings.wayHome;
     for (const box of providerBoxes()) box.checked = !settings.hideProviders.includes(box.value);
     updateOutputs();
@@ -351,7 +366,7 @@
     for (const key of FIELDS) next[key] = NUMERIC.has(key) ? Number($(key).value) : $(key).value;
     next.home = homeById.get(next.home);
     next.hideProviders = providerBoxes().filter((box) => !box.checked).map((box) => box.value);
-    next.legs = $("filters").elements.legs.value;
+    for (const key of RADIOS) next[key] = $("filters").elements[key].value;
     next.wayHome = $("wayHome").checked;
     for (const key of OUTSIDE_FORM) next[key] = settings[key];
     if (!TIME_OF_DAY.test(next.dropoffTime)) next.dropoffTime = DEFAULTS.dropoffTime;
@@ -367,6 +382,22 @@
     $("maxWaitOut").textContent = v("maxWait") === 0 ? "same day only" : `up to ${plural(v("maxWait"), "day")}`;
     $("hopRadiusOut").textContent = v("hopRadius") === 0 ? "off" : `up to ${fmtKm(v("hopRadius"))}`;
     $("wayHomeOptions").hidden = !$("wayHome").checked;
+
+    // One-way or round trip: which filters apply, and what they are called. Read from the form,
+    // so the panel follows the switch at once (the trips follow a moment later).
+    const form = $("filters").elements;
+    const oneWayNow = form.tripType.value === "oneway";
+    const chains = !oneWayNow || form.legsOneWay.value !== "1"; // a single rally has no legs to wait or hop between
+    $("tripTypeHint").textContent = oneWayNow
+      ? "Drive away from home with one rally, or chain up to three. You get home another way."
+      : "Out with one rally and back with another, ending near home.";
+    $("returnField").hidden = oneWayNow;
+    $("latestLabel").textContent = oneWayNow ? "Latest drop-off" : "Back by";
+    $("legsOneWayField").hidden = !oneWayNow;
+    $("legsRoundField").hidden = oneWayNow;
+    $("maxWaitField").hidden = !chains;
+    $("hopField").hidden = !chains;
+    $("sortDistance").textContent = oneWayNow ? "Ends farthest from home" : "Ends closest to home";
   }
 
   let debounce;
@@ -389,9 +420,10 @@
     return hidden.size ? data.rallies.filter((r) => !hidden.has(providerOf(r))) : data.rallies;
   }
 
-  // Round trips from one home station with the current filters (the "via" filter comes on top).
+  // One-way trips or round trips from one home station with the current filters (the "via" filter comes on top).
   function tripsFrom(home, rallies) {
-    const found = M.findRoundTrips({ stations: data.stations, rallies }, {
+    const found = M.findTrips({ stations: data.stations, rallies }, {
+      tripType: settings.tripType,
       home,
       startRadiusKm: settings.startRadius,
       returnRadiusKm: settings.returnRadius,
@@ -399,13 +431,15 @@
       earliest: settings.earliest,
       latest: settings.latest,
       maxWaitDays: settings.maxWait,
-      maxLegs: settings.legs === "2" ? 2 : 3,
-      sort: settings.sort === "cost" ? "start" : settings.sort, // compute() sorts by cost itself
+      maxLegs: maxLegs(),
+      // compute() sorts by cost itself. By distance, round trips list the end closest to home first
+      // and one-way trips the farthest.
+      sort: settings.sort === "cost" ? "start" : settings.sort === "distance" && oneWay() ? "far" : settings.sort,
     });
-    return settings.legs === "3" ? found.filter((t) => t.legs.length === 3) : found;
+    return !oneWay() && settings.legs === "3" ? found.filter((t) => t.legs.length === 3) : found;
   }
 
-  // How many round trips each station in the home list would have with the current filters ("Berlin (17)").
+  // How many trips each station in the home list would have with the current filters ("Berlin (17)").
   // Counting all of them takes up to a few hundred ms, so it runs in short slices, and only again
   // when a filter other than the home station changed.
   const homeCounts = new Map();
@@ -414,8 +448,8 @@
 
   function countHomes(error) {
     const key = JSON.stringify([
-      error, settings.startRadius, settings.returnRadius, settings.hopRadius, settings.earliest, settings.latest,
-      settings.maxWait, settings.legs, settings.hideProviders,
+      error, settings.tripType, settings.startRadius, settings.returnRadius, settings.hopRadius, settings.earliest,
+      settings.latest, settings.maxWait, settings.legs, settings.legsOneWay, settings.hideProviders,
     ]);
     if (key === countKey) return;
     countKey = key;
@@ -451,13 +485,14 @@
   function compute() {
     let error = "";
     if (!settings.earliest || !settings.latest) error = "Pick both dates.";
-    else if (settings.latest < settings.earliest) error = "The back-by date is before the earliest pickup.";
+    else if (settings.latest < settings.earliest) {
+      error = `The ${oneWay() ? "latest drop-off" : "back-by date"} is before the earliest pickup.`;
+    }
     $("dateError").textContent = error;
 
     allTrips = error ? [] : tripsFrom(stations.get(settings.home), visibleRallies());
     countHomes(error);
-    $("legendMid").hidden = settings.legs === "2";
-    $("legendHome").hidden = !settings.wayHome;
+    updateLegend();
 
     const factsCtx = { stations, routes: routeData && routeData.routes, costs: costSettings() };
     facts = new Map(allTrips.map((t) => [t.id, R.tripFacts(t, factsCtx)]));
@@ -475,6 +510,18 @@
     drawBase();
     if (keepSelection) selectTrip(selectedId, { animate: false });
     else clearSelection();
+  }
+
+  // The legend only names what the chosen kind of trip can draw.
+  function updateLegend() {
+    const chains = maxLegs() > (oneWay() ? 1 : 2); // more rallies than the plainest trip of this kind
+    $("legendOutText").textContent = oneWay() ? "First rally" : "Outbound rally";
+    $("legendMidText").textContent = oneWay() ? "Onward rally" : "Middle rally";
+    $("legendMid").hidden = !chains;
+    $("legendBack").hidden = oneWay();
+    $("legendHop").hidden = oneWay() && !chains;
+    $("legendHome").hidden = !settings.wayHome;
+    $("legendReturnArea").hidden = oneWay();
   }
 
   const costSettings = () => ({
@@ -529,10 +576,9 @@
       const width = (M.daysBetween(from, to) / span) * 100;
       return `<span class="${cls}" style="left:${left.toFixed(2)}%;width:${Math.max(width, 0.8).toFixed(2)}%"></span>`;
     };
-    const n = t.legs.length;
     const parts = t.legs.map((r, i) => {
       const wait = i > 0 && t.waits[i - 1] > 0 ? seg("wait", t.legs[i - 1].return, r.pickup) : "";
-      return wait + seg(legKind(i, n), r.pickup, r.return);
+      return wait + seg(legKind(t, i), r.pickup, r.return);
     });
     return `<div class="timeline" aria-hidden="true">${parts.join("")}</div>`;
   }
@@ -590,10 +636,14 @@
         body += betweenHtml(t, i - 1);
       }
       title += arrow("→") + esc(stations.get(r.to).name);
-      body += legHtml(legKind(i, n), r);
+      body += legHtml(legKind(t, i), r);
     });
-    const waitFact = t.waitDays === 0 ? "no waiting" : `${plural(t.waitDays, "day")} waiting`;
-    const legsFact = n === 3 ? "3 rallies · " : "";
+    // "15 days · 3 rallies · 1 day waiting · ends 368 km from home". The rallies are only counted when
+    // there are more than the plainest trip of this kind has, and a single rally has nothing to wait for.
+    const summary = [plural(t.totalDays, "day")];
+    if (n > (t.type === "oneway" ? 1 : 2)) summary.push(`${n} rallies`);
+    if (n > 1) summary.push(t.waitDays === 0 ? "no waiting" : `${plural(t.waitDays, "day")} waiting`);
+    summary.push(`ends ${fmtKm(t.endKm)} from home`);
     const f = facts.get(t.id);
     const costLine = f
       ? `<p class="facts" title="Rental (rally fee and insurance, or the listed price) and diesel for ${fmtKm(f.roadKm)}${f.measured ? "" : " (distance estimated)"}; no tolls">` +
@@ -605,7 +655,7 @@
       `<li class="trip${t.id === selectedId ? " selected" : ""}" data-id="${esc(t.id)}" tabindex="0">` +
       `<h3>${title}</h3>` +
       body +
-      `<p class="facts">${plural(t.totalDays, "day")} · ${legsFact}${waitFact} · ends ${fmtKm(t.endKm)} from home</p>` +
+      `<p class="facts">${summary.join(" · ")}</p>` +
       costLine +
       timelineHtml(t) +
       "</li>"
@@ -624,27 +674,30 @@
 
   function renderList() {
     const n = trips.length;
-    const threes = trips.filter((t) => t.legs.length === 3).length;
-    $("resultCount").textContent = !n
-      ? "No round trips"
-      : settings.legs === "2-3"
-        ? `${plural(n, "round trip")} · ${threes} with 3 rallies`
-        : plural(n, "round trip");
+    // Next to the total: how many trips chain more rallies than the plainest trip of this kind.
+    const longer = trips.filter((t) => t.legs.length > (oneWay() ? 1 : 2)).length;
+    const longerText =
+      oneWay() && maxLegs() > 1 ? ` · ${longer} with ${maxLegs() === 2 ? "2" : "2 or 3"} rallies`
+        : !oneWay() && settings.legs === "2-3" ? ` · ${longer} with 3 rallies`
+          : "";
+    $("resultCount").textContent = n ? plural(n, tripWord()) + longerText : `No ${tripWord()}s`;
     const chip = (label) =>
       `<span class="chip">${label}<button type="button" id="clearVia" aria-label="Show all trips">×</button></span>`;
+    const viaText = viaWord();
     $("viaChip").innerHTML =
-      via !== null ? chip(`Via ${esc(stations.get(via).name)}`)
+      via !== null ? chip(`${viaText[0].toUpperCase()}${viaText.slice(1)} ${esc(stations.get(via).name)}`)
         : startVia !== null ? chip(`Starting at ${esc(stations.get(startVia).name)}`)
           : "";
 
     if (!n) {
-      $("results").innerHTML = $("dateError").textContent
-        ? ""
+      const empty = oneWay()
+        ? "No one-way trips match yet. Try a later drop-off date, a bigger start radius, or another home station."
         : settings.legs === "3"
-          ? '<li class="empty">No trips with 3 rallies match. They need two far-away rallies that line up, ' +
-            "so try a bigger start radius, more days between legs, or a train hop.</li>"
-          : '<li class="empty">Nothing matches yet. Try a later back-by date, a bigger return radius, ' +
-            "more days between legs, or a train hop.</li>";
+          ? "No trips with 3 rallies match. They need two far-away rallies that line up, " +
+            "so try a bigger start radius, more days between legs, or a train hop."
+          : "Nothing matches yet. Try a later back-by date, a bigger return radius, " +
+            "more days between legs, or a train hop.";
+      $("results").innerHTML = $("dateError").textContent ? "" : `<li class="empty">${empty}</li>`;
       return;
     }
     const rest = n - shown;
@@ -671,6 +724,7 @@
   function rankUnavailable(key) {
     const m = R.METRICS[key];
     if (!m) return "";
+    if (m.types && !m.types.includes(settings.tripType)) return "round trips only";
     if (!m.modes.includes(settings.rankMode)) return "only for where to go";
     if (m.needs === "routes" && !routeData) return "needs route data";
     if (m.needs === "climate" && !climateData) return "needs weather data";
@@ -712,6 +766,7 @@
     if (rankUnavailable(settings.rankBy)) settings.rankBy = "dates";
     const rows = R.rankStations(allTrips, { stations, facts }, {
       mode: settings.rankMode,
+      tripType: settings.tripType,
       by: rankKey(),
       combine: settings.combine,
       home: stations.get(settings.home),
@@ -838,7 +893,7 @@
       `<span class="rank-no">${row.rank === null ? "–" : position}</span>` +
       '<div class="rank-main">' +
       `<h3>${esc(row.name)} <span class="rank-country">${esc(countryName(row.country))}</span></h3>` +
-      `<p class="rank-sub">${plural(row.values.dates, "departure date")} · ${plural(row.trips, "round trip")}${away}</p>` +
+      `<p class="rank-sub">${plural(row.values.dates, "departure date")} · ${plural(row.trips, tripWord())}${away}</p>` +
       `<p class="rank-detail">${detailHtml(row, key)}</p>` +
       dateStripHtml(row) +
       "</div>" +
@@ -859,7 +914,10 @@
     if (settings.view !== "destinations") return;
 
     const rows = visibleRankRows();
-    const what = settings.rankMode === "destinations" ? "places your round trips stop at" : "stations your round trips start from";
+    const what =
+      settings.rankMode === "starts" ? `stations your ${tripWord()}s start from`
+        : oneWay() ? "places your one-way trips take you to"
+          : "places your round trips stop at";
     $("rankCount").textContent = rows.length ? `${plural(rows.length, "station")}: ${what}` : "";
 
     const notes = [];
@@ -873,7 +931,7 @@
 
     $("ranking").innerHTML = rows.length
       ? rows.map((r, i) => rankRowHtml(r, i + 1)).join("")
-      : `<li class="empty">${allTrips.length ? "No station matches these marks. Untick the favourites or visited filter." : "No round trips with these filters, so nothing to rank."}</li>`;
+      : `<li class="empty">${allTrips.length ? "No station matches these marks. Untick the favourites or visited filter." : `No ${tripWord()}s with these filters, so nothing to rank.`}</li>`;
 
     const key = rankKey();
     const credits = [];
@@ -1000,7 +1058,7 @@
         fillOpacity: 0.05,
         interactive: false,
       }).addTo(layers.home);
-    ring(settings.returnRadius, COLORS.back);
+    if (!oneWay()) ring(settings.returnRadius, COLORS.back);
     if (settings.startRadius > 0) ring(settings.startRadius, COLORS.out);
     L.marker([home.lat, home.lon], { icon: homeIcon, keyboard: false, zIndexOffset: 500 })
       .bindTooltip(`Home: ${esc(home.name)}`, { direction: "top", offset: [0, -14] })
@@ -1015,7 +1073,7 @@
     const routes = new Map();
     for (const t of trips) {
       t.legs.forEach((r, i) => {
-        const kind = legKind(i, t.legs.length);
+        const kind = legKind(t, i);
         routes.set(`${kind}${r.from}-${r.to}`, [r.from, r.to, COLORS[kind]]);
       });
     }
@@ -1039,7 +1097,7 @@
     for (const s of stations.values()) {
       if (hidden.has(providerById.get(s.id))) continue;
       const km = M.haversineKm(home, s);
-      const role = km <= settings.startRadius ? "out" : km <= settings.returnRadius ? "back" : "far";
+      const role = km <= settings.startRadius ? "out" : !oneWay() && km <= settings.returnRadius ? "back" : "far";
       const n = viaCounts.get(s.id) || 0;
       const marker = L.circleMarker([s.lat, s.lon], {
         pane: "stations",
@@ -1050,7 +1108,7 @@
         fillOpacity: n || role !== "far" ? 0.95 : 0.6,
       });
       const where = role === "out" ? "Start area" : role === "back" ? "Return area" : fmtKm(km) + " from home";
-      const tripsLine = n ? `<br>${plural(n, "round trip")} via here${via === s.id ? " (filtered)" : ""}` : "";
+      const tripsLine = n ? `<br>${plural(n, tripWord())} ${viaWord()} ${esc(s.name)}${via === s.id ? " (filtered)" : ""}` : "";
       const source = providersInData.length > 1 ? ` · ${esc(providerName(providerById.get(s.id)))}` : "";
       marker.bindTooltip(
         `<strong>${esc(s.name)}</strong>${source}<br>${where}${tripsLine}<br><span class="tip-hint">Click for options</span>`,
@@ -1116,7 +1174,7 @@
   function stationMenu(s, viaCount) {
     const target = homeFor(s);
     const count = homeCounts.get(target.id);
-    const asHome = count === undefined ? "counting…" : plural(count, "round trip");
+    const asHome = count === undefined ? "counting…" : plural(count, tripWord());
     const source = providersInData.length > 1 ? ` · ${esc(providerName(providerById.get(s.id)))}` : "";
     const lines = [`<p><strong>${esc(s.name)}</strong>${source}</p>`];
     lines.push(weatherStripHtml(s));
@@ -1128,7 +1186,7 @@
       lines.push(`<button type="button" data-action="home">Set ${target.id === s.id ? "" : esc(target.name) + " "}as home</button>`);
     }
     if (via === s.id) lines.push('<button type="button" data-action="via">Show all trips again</button>');
-    else if (viaCount) lines.push(`<button type="button" data-action="via">Trips via ${esc(s.name)} (${viaCount})</button>`);
+    else if (viaCount) lines.push(`<button type="button" data-action="via">Trips ${viaWord()} ${esc(s.name)} (${viaCount})</button>`);
 
     const el = document.createElement("div");
     el.className = "station-menu";
@@ -1145,7 +1203,9 @@
 
   function fitOverview() {
     const home = stations.get(settings.home);
-    const bounds = L.latLng(home.lat, home.lon).toBounds(settings.returnRadius * 2000);
+    // Around home: the return area, or for one-way trips the region nearby (their stops widen it).
+    const reachKm = oneWay() ? Math.max(settings.startRadius, 100) : settings.returnRadius;
+    const bounds = L.latLng(home.lat, home.lon).toBounds(reachKm * 2000);
     const ids =
       settings.view === "destinations"
         ? visibleRankRows().filter((r) => r.rank !== null).slice(0, 15).map((r) => r.id)
@@ -1211,7 +1271,7 @@
       if (i > 0 && r.from !== t.legs[i - 1].to) {
         legs.push({ kind: "hop", pts: straight(at(t.legs[i - 1].to), at(r.from)), ms: 700 });
       }
-      legs.push({ kind: legKind(i, n), pts: arc(at(r.from), at(r.to)), ms: legMs });
+      legs.push({ kind: legKind(t, i), pts: arc(at(r.from), at(r.to)), ms: legMs });
     });
 
     const bounds = L.latLngBounds(legs.flatMap((l) => l.pts));
@@ -1241,17 +1301,17 @@
     for (let i = 0; i < n - 1; i++) {
       const prev = t.legs[i];
       const next = t.legs[i + 1];
-      const arriveColor = COLORS[legKind(i, n)];
+      const arriveColor = COLORS[legKind(t, i)];
       const arrive = `${esc(at(prev.to).name)} · ${fmtDay(prev.return)}`;
       if (next.from !== prev.to) {
         stopMarker(at(prev.to), arriveColor, arrive);
-        stopMarker(at(next.from), COLORS[legKind(i + 1, n)], `${esc(at(next.from).name)} · ${fmtDay(next.pickup)}`);
+        stopMarker(at(next.from), COLORS[legKind(t, i + 1)], `${esc(at(next.from).name)} · ${fmtDay(next.pickup)}`);
       } else {
         stopMarker(at(prev.to), arriveColor, arrive + (t.waits[i] ? ` → ${fmtDay(next.pickup)}` : ""));
       }
     }
     const end = t.legs[n - 1];
-    stopMarker(at(end.to), COLORS.back, `${esc(at(end.to).name)} · ${fmtDay(end.return)}`);
+    stopMarker(at(end.to), COLORS[legKind(t, n - 1)], `${esc(at(end.to).name)} · ${fmtDay(end.return)}`);
     drawSites(t);
 
     const flow = (line, kind) => {
@@ -1268,7 +1328,7 @@
 
     if (still) {
       legs.forEach((l, i) => flow(lines[i], l.kind));
-      van.getElement()?.setAttribute("data-leg", "back");
+      van.getElement()?.setAttribute("data-leg", legKind(t, n - 1));
       return;
     }
 
@@ -1583,9 +1643,11 @@
     const n = t.legs.length;
     const items = [];
     t.legs.forEach((r, i) => {
-      items.push(alongLegHtml(f.legs[i], legKind(i, n), stations.get(r.from), stations.get(r.to)));
+      items.push(alongLegHtml(f.legs[i], legKind(t, i), stations.get(r.from), stations.get(r.to)));
       if (i < n - 1) items.push(alongStopHtml(stations.get(r.to), r.return, t.legs[i + 1].pickup));
     });
+    // A one-way trip ends somewhere new, so the weather you arrive to is worth a line as well.
+    if (t.type === "oneway") items.push(alongStopHtml(stations.get(lastLeg(t).to), lastLeg(t).return, null));
     const summary =
       f.drivingMinPerDay !== null
         ? `<p class="wh-detail">About ${fmtDuration(f.drivingMinPerDay)} driving a day on average, ${fmtDuration(f.drivingMin)} in all.</p>`

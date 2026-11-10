@@ -234,3 +234,89 @@ test("new this week never counts the rallies found on the first tracked day", ()
   assert.equal(R.freshSince("2026-11-20T07:00:00Z", undefined), null);
   assert.equal(R.freshSince("2026-11-03T07:00:00Z", "2026-11-03"), null); // nothing can be new on day one
 });
+
+// ---------- One-way trips ----------
+
+// The same rallies as one-way trips: to Madrid (and on to Marburg), to Barcelona (and on to Hamburg),
+// to Antwerp. The rallies back to Berlin end in the start area, so they extend nothing.
+const oneWayTrips = M.findTrips(
+  { stations: stationList, rallies },
+  {
+    tripType: "oneway",
+    home: { lat: 52.52, lon: 13.405 },
+    startRadiusKm: 50,
+    hopRadiusKm: 0,
+    earliest: "2026-11-01",
+    latest: "2026-12-31",
+    maxWaitDays: 2,
+    maxLegs: 2,
+    sort: "start",
+  }
+);
+
+function rankOneWay(by, extra = {}) {
+  const ctx = { stations, routes, costs, facts: new Map() };
+  for (const t of oneWayTrips) ctx.facts.set(t.id, R.tripFacts(t, ctx));
+  return R.rankStations(oneWayTrips, ctx, {
+    mode: "destinations",
+    tripType: "oneway",
+    by,
+    home: stations.get(6),
+    today: "2026-11-01",
+    freshSince: "2026-11-04",
+    climate,
+    ...extra,
+  });
+}
+
+test("a one-way trip takes you to where it ends, a round trip only to its stops", () => {
+  assert.equal(oneWayTrips.length, 5);
+  const toMadrid = oneWayTrips.find((t) => t.legs.length === 1 && t.legs[0].to === 20);
+  const onToMarburg = oneWayTrips.find((t) => t.legs.length === 2 && t.legs[1].to === 22);
+  assert.deepEqual([...R.stopsOf(toMadrid)], [20]);
+  assert.deepEqual([...R.stopsOf(onToMarburg)], [20, 22]);
+  assert.deepEqual([...R.stopsOf(madridHome())], [20]);
+});
+
+test("one-way destinations include the places trips end at", () => {
+  const rows = rankOneWay("trips");
+  assert.deepEqual(
+    rows.map((r) => [r.name, r.trips]),
+    [["Barcelona", 2], ["Madrid", 2], ["Antwerp", 1], ["Hamburg", 1], ["Marburg", 1]]
+  );
+  assert.equal(rankOneWay("distance")[0].name, "Madrid");
+  assert.deepEqual(rankOneWay("trips", { mode: "starts" }).map((r) => [r.name, r.trips]), [["Berlin-Schönefeld", 4], ["Berlin", 1]]);
+});
+
+test("the weather at a one-way destination is for the month you arrive", () => {
+  const rows = rankOneWay("warmth");
+  assert.deepEqual(names(rows).slice(0, 3), ["Madrid", "Barcelona", "Antwerp"]);
+  assert.equal(rows[2].arrivalMonth, 10); // Antwerp is only ever the end of a trip, reached on 14 Nov
+  assert.equal(rows[3].rank, null); // no weather data for Hamburg and Marburg
+});
+
+test("backups and stay are figures for round trips only", () => {
+  assert.equal(R.metricApplies("stay", "destinations", "round"), true);
+  assert.equal(R.metricApplies("stay", "destinations", "oneway"), false);
+  assert.equal(R.metricApplies("stay", "starts", "round"), false);
+  assert.equal(R.metricApplies("backups", "starts", "oneway"), false);
+  assert.equal(R.metricApplies("dates", "starts", "oneway"), true);
+  assert.equal(R.metricApplies("nonsense", "starts", "oneway"), false);
+
+  const rows = rankOneWay("trips");
+  assert.ok(rows.every((r) => r.values.stay === null && r.values.backups === null));
+  assert.ok(rankOneWay("stay").every((r) => r.rank === null));
+  const combined = rankOneWay("combined", { combine: ["stay", "backups", "trips"] });
+  assert.deepEqual(Object.keys(combined[0].parts), ["trips"]);
+  assert.ok(rank("trips").every((r) => r.values.stay !== null && r.values.backups !== null)); // still there for round trips
+});
+
+test("a one-way trip costs one rally, and its facts cover a single leg", () => {
+  const toMadrid = oneWayTrips.find((t) => t.legs.length === 1 && t.legs[0].to === 20);
+  const f = R.tripFacts(toMadrid, { stations, routes, costs });
+  // 129 fee + 7 days × 15 insurance + 2300 km × 10 l/100 km × 1.80 €/l
+  assert.equal(f.cost.toFixed(2), (129 + 105 + 2300 * 0.1 * 1.8).toFixed(2));
+  assert.equal(f.legs.length, 1);
+  assert.deepEqual(f.countries, ["DE", "FR", "ES"]);
+  assert.equal(f.costPerDay.toFixed(2), (f.cost / 7).toFixed(2));
+});

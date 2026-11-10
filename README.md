@@ -1,9 +1,12 @@
-# Rally round trips
+# Rally trips
 
-Finds round trips made of two or three one-way relocation rentals ("rallies") from roadsurfer
-and Imoova: one rally from near home to somewhere far away, optionally a second rally onward to
-another far-away station, then a last rally back to a station near home. Results are shown on a
-web page with a map that animates each trip.
+Finds trips made of one-way relocation rentals ("rallies") from roadsurfer and Imoova, and shows
+them on a web page with a map that animates each trip. There are two kinds of trip:
+
+- **One-way** (the default): one rally from near home to somewhere else, or a chain of up to three
+  rallies that keeps going. You get home another way.
+- **Round trip**: one rally from near home to somewhere far away, optionally a second rally onward
+  to another far-away station, then a last rally back to a station near home.
 
 ## Use it
 
@@ -20,30 +23,39 @@ but the map background may stay blank because OpenStreetMap only serves tiles to
 
 | Filter | Meaning |
 | --- | --- |
-| Home | The station the radii are measured from. The number after each station, e.g. "Berlin (17)", is how many round trips it would have with the other filters as they are now |
-| Start within | The first rally must start this close to home (0 = the home station only) |
-| Return within | The last rally must end this close to home |
-| Earliest pickup / Back by | The whole trip must fit between these dates |
-| Rallies per trip | 2, 2 or 3, or only 3. In a three-rally trip the middle rally must also end outside the return area (otherwise you'd already be home) |
-| Wait between legs | Days allowed between dropping off one van and picking up the next |
+| One-way / Round trip | The kind of trip to look for. The filters below that a kind doesn't use are hidden, and each kind remembers its own "Rallies per trip" |
+| Home | The station the radii are measured from. The number after each station, e.g. "Berlin (17)", is how many trips of the chosen kind it would have with the other filters as they are now |
+| Start within | The first rally must start this close to home (0 = the home station only). One-way trips end outside this area |
+| Return within | Round trips only: the last rally must end this close to home |
+| Earliest pickup / Back by | The whole trip must fit between these dates. For one-way trips the second date is the "Latest drop-off" |
+| Rallies per trip | One-way: 1, 1 or 2, or up to 3. Round trip: 2, 2 or 3, or only 3. In a three-rally round trip the middle rally must also end outside the return area (otherwise you'd already be home) |
+| Wait between legs | Days allowed between dropping off one van and picking up the next. Hidden, like the train hop, while a one-way trip is a single rally |
 | Train hop between rallies | Lets the next rally start from a different station this far from where the previous one ended (e.g. arrive in Antwerp, take the train to Brussels). A roadsurfer station and an Imoova city less than 30 km apart always count as the same place ("Across town") |
 | Rentals from | Which providers to use: roadsurfer, Imoova or both |
 | Costs | roadsurfer's rally fee and insurance level, the van's diesel use and the fuel price, for the cost estimates (no tolls). Imoova legs use their listed price instead of the rally fee and insurance |
 | Way home | Adds a "Getting home" panel to the selected trip, from the last drop-off to your home station (see below) |
 
-Three-rally trips are rare with tight settings, because they need a rally between two far-away
+A one-way chain never loops: each of its rallies ends outside the start area (at least 30 km from
+home) and away from every place the trip has already been. So Berlin → Madrid → Berlin is a round
+trip and never shows up as a one-way trip. With more than one rally allowed, the shorter trips are
+listed too: Berlin → Madrid as well as Berlin → Madrid → Lisbon.
+
+Three-rally round trips are rare with tight settings, because they need a rally between two far-away
 stations that lines up with the other two. A bigger start radius, more waiting days, or a train
 hop finds more of them.
 
-Click a trip to see it animated on the map; **Play all** cycles through the list.
+Click a trip to see it animated on the map; **Play all** cycles through the list. Green is the
+first rally, orange a rally onward, and purple the rally back home, which only round trips have.
 The selected trip also shows **Along the way**: for each rally the road distance, driving time,
 countries, national parks and World Heritage sites passed, km by the sea or above 1,000 m and the
-highest point; for each stop the typical weather in the month you're there; and the average driving
+highest point; for each stop, and for the place a one-way trip ends at, the typical weather in the
+month you're there; and the average driving
 time per day. The parks (triangles) and World Heritage sites (diamonds) are marked on the map. The
 map draws each rally as an arc, not the actual road, so the marks sit along the real road, not on the arc.
 Click a station on the map for a small menu: its typical daytime highs for each month (the months of
-your dates marked), **Set as home** (with how many round trips you'd get
-from there) and, for the green stations, **Trips via ...** to list only trips that stop there.
+your dates marked), **Set as home** (with how many trips you'd get
+from there) and, for the green stations, **Trips via ...** to list only trips that stop there
+(**Trips to ...** for one-way trips, which can also end there).
 An Imoova city next to a roadsurfer station sets that roadsurfer station as home. Each leg has a **Book** link
 that opens the provider's booking page for exactly that rally. Settings are remembered in the browser.
 
@@ -70,14 +82,15 @@ kilometres a day you'd drive, and the countries on the way. **Lowest cost** sort
 
 Switch from **Trips** to **Destinations** to rank stations instead of listing trips. It uses the
 same filters, so it answers "with my settings, where can I go?". **Where to go** ranks the places
-your round trips stop at; **Where to start** ranks the stations they start from.
+your trips take you to: where round trips stop between rallies, and for one-way trips also where
+they end. **Where to start** ranks the stations they start from.
 
 | Rank by | What it means |
 | --- | --- |
 | Most departure dates | Different days you could leave on for that place |
-| Most backup options | Ways back per outbound rally, if your first choice gets booked |
-| Most round trips | All matching trips through the station |
-| Longest stay | Most days there between rallies |
+| Most backup options | Ways back per outbound rally, if your first choice gets booked (round trips only) |
+| Most trips | All matching trips to or through the station |
+| Longest stay | Most days there between rallies (round trips only) |
 | Most relaxed pace | Fewest km a day on its gentlest trip |
 | Farthest from home, Most countries | How far it takes you, and how many countries you cross |
 | Warmest, Sunniest, Fewest rainy days | Typical weather in the month you'd arrive (2024–2025 average) |
@@ -94,7 +107,8 @@ site and 1 per 20 km by the sea or above 1,000 m, and the row always lists what 
 ## Way home
 
 Tick **Plan how to get home** and select a trip. The panel compares two ways back from the
-last drop-off, and the chosen one is drawn on the map as a dashed line:
+last drop-off, and the chosen one is drawn on the map as a dashed line. A one-way trip ends far
+from home, so this is where you see what getting back takes:
 
 | Mode | What you get |
 | --- | --- |
@@ -164,7 +178,7 @@ The rules for this are in `CLAUDE.md`.
   were kept get them from that cache on the next run (`--positions-only` does just that, no downloads).
 - `scraper/fetch_climate.py` saves typical monthly weather per station from Open-Meteo
   (`web/data/climate.json`).
-- `web/matching.js` chains rallies into round trips (distances use the stations' coordinates).
+- `web/matching.js` chains rallies into one-way trips and round trips (distances use the stations' coordinates).
 - `web/ranking.js` turns those trips into per-station figures, costs and scenic scores.
 - `web/wayhome.js` holds the way-home estimates and links; the car route is fetched in `app.js`.
 - `web/app.js` draws the filters, the lists, and the Leaflet map.

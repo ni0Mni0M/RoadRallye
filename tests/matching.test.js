@@ -1,7 +1,7 @@
 // Run with: node --test tests/matching.test.js
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { findRoundTrips, haversineKm, daysBetween, addDays, SAME_PLACE_KM } = require("../web/matching.js");
+const { findTrips, findRoundTrips, haversineKm, daysBetween, addDays, SAME_PLACE_KM } = require("../web/matching.js");
 
 const BERLIN = { lat: 52.5200, lon: 13.4050 };
 
@@ -218,4 +218,119 @@ test("offers that differ only in the return date are separate trips", () => {
   ]);
   assert.equal(trips.length, 2);
   assert.notEqual(trips[0].id, trips[1].id);
+});
+
+// ---------- One-way trips ----------
+
+function findOneWay(rallies, overrides = {}) {
+  return findTrips({ stations, rallies }, { ...defaults, tripType: "oneway", maxLegs: 1, ...overrides });
+}
+const ends = (trips) => trips.map((t) => t.legs.map((r) => r.to).join(">"));
+
+test("a one-way trip is a single rally out of the start area", () => {
+  const trips = findOneWay([
+    rally(51, 20, "2026-11-03", "2026-11-10"), // Berlin-Schönefeld -> Madrid
+    rally(3, 20, "2026-11-03", "2026-11-10"), // Hamburg is outside the start area
+  ]);
+  assert.equal(trips.length, 1);
+  assert.equal(trips[0].type, "oneway");
+  assert.deepEqual(ends(trips), ["20"]);
+  assert.deepEqual(trips[0].waits, []);
+  assert.deepEqual(trips[0].hops, []);
+  assert.equal(trips[0].waitDays, 0);
+  assert.equal(trips[0].totalDays, 7);
+  assert.ok(trips[0].endKm > 1800 && trips[0].endKm < 1950);
+});
+
+test("a one-way trip needs no way back", () => {
+  const rallies = [rally(51, 20, "2026-11-03", "2026-11-10")];
+  assert.equal(find(rallies).length, 0); // one rally is no round trip
+  assert.equal(findOneWay(rallies, { returnRadiusKm: 50 }).length, 1);
+});
+
+test("a one-way trip must fit inside the date range", () => {
+  const rallies = [rally(51, 20, "2026-11-03", "2026-11-10")];
+  assert.equal(findOneWay(rallies, { earliest: "2026-11-04" }).length, 0);
+  assert.equal(findOneWay(rallies, { latest: "2026-11-09" }).length, 0);
+  assert.equal(findOneWay(rallies, { earliest: "2026-11-03", latest: "2026-11-10" }).length, 1);
+});
+
+test("one-way chains are listed next to the shorter trips they extend", () => {
+  // Berlin -> Madrid -> Barcelona -> Antwerp
+  const rallies = [
+    rally(51, 20, "2026-11-03", "2026-11-10"),
+    rally(20, 17, "2026-11-10", "2026-11-17"),
+    rally(17, 47, "2026-11-18", "2026-11-25"),
+  ];
+  assert.deepEqual(ends(findOneWay(rallies)), ["20"]);
+  assert.deepEqual(ends(findOneWay(rallies, { maxLegs: 2 })), ["20", "20>17"]);
+  const trips = findOneWay(rallies, { maxLegs: 3 });
+  assert.deepEqual(ends(trips), ["20", "20>17", "20>17>47"]);
+  assert.deepEqual(trips[2].waits, [0, 1]);
+  assert.deepEqual(trips[2].hops, [0, 0]);
+  assert.equal(trips[2].totalDays, 22);
+  // The day of waiting in Barcelona, and the date range, cut the chain short.
+  assert.deepEqual(ends(findOneWay(rallies, { maxLegs: 3, maxWaitDays: 0 })), ["20", "20>17"]);
+  assert.deepEqual(ends(findOneWay(rallies, { maxLegs: 3, latest: "2026-11-24" })), ["20", "20>17"]);
+});
+
+test("a one-way trip never ends back in the start area", () => {
+  const rallies = [
+    rally(51, 6, "2026-11-03", "2026-11-05"), // Berlin-Schönefeld -> Berlin, ~27 km
+    rally(51, 20, "2026-11-03", "2026-11-10"),
+    rally(20, 6, "2026-11-10", "2026-11-17"), // Madrid -> Berlin makes a round trip, not a one-way chain
+  ];
+  assert.deepEqual(ends(findOneWay(rallies, { maxLegs: 3 })), ["20"]);
+  // Even with "home station only", the stations right next to home count as home.
+  const fromSchoenefeld = { maxLegs: 3, home: stations[1], startRadiusKm: 0 };
+  assert.deepEqual(ends(findOneWay(rallies, fromSchoenefeld)), ["20"]);
+});
+
+test("a one-way chain never visits a place twice", () => {
+  const rallies = [
+    rally(51, 20, "2026-11-03", "2026-11-10"), // Berlin -> Madrid
+    rally(20, 17, "2026-11-10", "2026-11-17"), // Madrid -> Barcelona
+    rally(17, 20, "2026-11-17", "2026-11-24"), // Barcelona -> Madrid again
+    rally(51, 47, "2026-11-03", "2026-11-10"), // Berlin -> Antwerp
+    rally(47, 48, "2026-11-10", "2026-11-12"), // Antwerp -> Antwerp-Port is the same place
+  ];
+  assert.deepEqual(ends(findOneWay(rallies, { maxLegs: 3 })).sort(), ["20", "20>17", "47"]);
+});
+
+test("one-way chains use train hops and the other provider's station in town", () => {
+  const rallies = [
+    rally(51, 47, "2026-11-03", "2026-11-10"), // Berlin -> Antwerp
+    rally(42, 20, "2026-11-11", "2026-11-18"), // Brussels -> Madrid, a train hop from Antwerp
+    rally("imoova-1", 17, "2026-11-10", "2026-11-17"), // Imoova from Antwerp city centre -> Barcelona
+  ];
+  assert.deepEqual(ends(findOneWay(rallies, { maxLegs: 2 })).sort(), ["47", "47>17"]);
+  const hopped = findOneWay(rallies, { maxLegs: 2, hopRadiusKm: 50 });
+  assert.deepEqual(ends(hopped).sort(), ["47", "47>17", "47>20"]);
+  const viaBrussels = hopped.find((t) => last(t).from === 42);
+  assert.ok(viaBrussels.hops[0] > 20 && viaBrussels.hops[0] < 50);
+});
+
+test("one-way trips can be sorted by how far they take you", () => {
+  const rallies = [
+    rally(51, 47, "2026-11-03", "2026-11-10"), // Antwerp, ~640 km from home
+    rally(51, 20, "2026-11-05", "2026-11-12"), // Madrid, ~1,870 km
+    rally(6, 17, "2026-11-07", "2026-11-14"), // Barcelona, ~1,500 km
+  ];
+  assert.deepEqual(ends(findOneWay(rallies, { sort: "start" })), ["47", "20", "17"]);
+  assert.deepEqual(ends(findOneWay(rallies, { sort: "far" })), ["20", "17", "47"]);
+  assert.deepEqual(ends(findOneWay(rallies, { sort: "distance" })), ["47", "17", "20"]);
+});
+
+test("round trips stay what they were, and every trip says its kind", () => {
+  const rallies = [
+    rally(51, 47, "2026-11-03", "2026-11-10"),
+    rally(47, 3, "2026-11-10", "2026-11-17"),
+  ];
+  const [trip] = find(rallies);
+  assert.equal(trip.type, "round");
+  assert.deepEqual(findTrips({ stations, rallies }, defaults), find(rallies)); // "round" is the default
+  // As one-way trips the same rallies are a trip to Antwerp and a chain on to Hamburg.
+  const oneWay = findOneWay(rallies, { maxLegs: 2 });
+  assert.deepEqual(ends(oneWay), ["47", "47>3"]);
+  assert.ok(oneWay.every((t) => t.type === "oneway"));
 });
