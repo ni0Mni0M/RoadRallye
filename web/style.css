@@ -748,7 +748,7 @@ input[type="range"] { width: 100%; margin: 4px 0; accent-color: var(--text); }
 
 /* The map itself fades towards the page colour, so the sample routes on it stay crisp. */
 .leaflet-tile-pane { transition: opacity 0.8s; }
-.landing .leaflet-tile-pane { opacity: 0.45; }
+.landing .leaflet-tile-pane { opacity: 0.75; }
 .landing #map { pointer-events: none; }
 
 .landing .map-actions, .landing .legend, .landing .leaflet-control-zoom { visibility: hidden; }
