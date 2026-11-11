@@ -833,3 +833,7 @@ input[type="range"] { width: 100%; margin: 4px 0; accent-color: var(--text); }
 #landingStats { margin: 14px 0 0; font-size: 12.5px; color: var(--muted); text-align: center; }
 
 .demo-fade { opacity: 0 !important; transition: opacity 0.6s; }
+
+/* The ring that spreads from the home station and from each destination a sample route reaches. */
+.demo-pulse { transform-box: fill-box; transform-origin: center; animation: demo-pulse 0.9s ease-out forwards; }
+@keyframes demo-pulse { to { transform: scale(4.5); opacity: 0; } }

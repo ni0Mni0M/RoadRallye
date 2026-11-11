@@ -408,7 +408,11 @@
   let debounce;
   function onFilterChange() {
     updateOutputs();
-    if (landing) return; // nothing is searched or saved before "Show trips"
+    if (landing) {
+      // Nothing is searched or saved before "Show trips"; the map only previews the chosen home.
+      if (homeById.get($("home").value) !== demoHome) playDemo();
+      return;
+    }
     clearTimeout(debounce);
     debounce = setTimeout(() => {
       readForm();
@@ -1861,74 +1865,141 @@
   // ---------- Landing page ----------
 
   // On a first visit the panel is a card over a full-window map (see style.css) that asks for home,
-  // dates and the kind of trip, while sample routes play behind it.
+  // dates and the kind of trip. Behind it the map previews the choice: it moves the chosen home into
+  // the free space beside the card and plays rallies that start there.
 
-  const inEurope = (s) => s && s.lat > 35 && s.lat < 62 && s.lon > -11 && s.lon < 26; // what the landing map shows
-
-  // Stations with rallies to at least two other places, each with those places.
-  function demoHubs() {
-    const byHub = new Map();
-    for (const r of data.rallies) {
-      if (r.from === r.to || !inEurope(stations.get(r.from)) || !inEurope(stations.get(r.to))) continue;
-      if (!byHub.has(r.from)) byHub.set(r.from, new Set());
-      byHub.get(r.from).add(r.to);
-    }
-    return [...byHub].filter(([, to]) => to.size >= 2).map(([from, to]) => ({ from, to: [...to] }));
-  }
+  const DEMO_START_KM = 50; // rallies starting this close to home count as "from home"
+  let demoGroup = null; // what the running round of the preview has drawn
+  let demoHome = null;
 
   const pickSome = (list, n) => [...list].sort(() => Math.random() - 0.5).slice(0, n);
 
-  // Draws a line from its first point to its last over `ms`.
-  function growLine(line, pts, ms, token) {
-    return new Promise((resolve) => {
-      const start = performance.now();
-      // A timer, not animation frames: those stop while the window is covered, and the loop would hang.
-      const step = () => {
-        if (token !== demoToken) return resolve();
-        const t = Math.min(1, (performance.now() - start) / ms);
-        const eased = t < 0.5 ? 2 * t * t : 1 - (2 * (1 - t) * (1 - t));
-        line.setLatLngs(pts.slice(0, Math.max(2, Math.ceil(eased * pts.length))));
-        if (t < 1) setTimeout(step, 16);
-        else resolve();
-      };
-      step();
-    });
+  // Where the rallies from around `home` go: station ids, without home itself.
+  function demoDestinations(home) {
+    const near = new Set(
+      [...stations.values()].filter((s) => M.haversineKm(home, s) <= DEMO_START_KM).map((s) => s.id)
+    );
+    const to = new Set();
+    for (const r of data.rallies) if (near.has(r.from) && !near.has(r.to) && stations.has(r.to)) to.add(r.to);
+    return [...to];
   }
 
+  // A ring that spreads from a station and fades (style.css: .demo-pulse).
+  function demoPulse(group, s, color) {
+    const ring = L.circleMarker([s.lat, s.lon], {
+      pane: "trip", radius: 6, color, weight: 2, fill: false, interactive: false, className: "demo-pulse",
+    }).addTo(group);
+    setTimeout(() => group.removeLayer(ring), 950);
+  }
+
+  // Draws a rally from its first point to its last, led by a bright dot; the destination then lights up.
   function demoLine(group, from, to, kind, delay, token) {
     const pts = arc(stations.get(from), stations.get(to));
+    const end = stations.get(to);
     const line = L.polyline(reduceMotion ? pts : [pts[0], pts[0]], {
-      pane: "trip", color: COLORS[kind], weight: 3.5, opacity: 0.9, lineCap: "round", interactive: false,
+      pane: "trip", color: COLORS[kind], weight: 4, opacity: 0.95, lineCap: "round", interactive: false,
     }).addTo(group);
-    return reduceMotion ? Promise.resolve() : sleep(delay).then(() => growLine(line, pts, 900, token));
+    const arrive = () => {
+      L.circleMarker([end.lat, end.lon], {
+        pane: "trip", radius: 6, color: COLORS.panel, weight: 2, fillColor: COLORS[kind], fillOpacity: 1, interactive: false,
+      }).addTo(group);
+      if (!reduceMotion) demoPulse(group, end, COLORS[kind]);
+    };
+    if (reduceMotion) return Promise.resolve(arrive());
+    return sleep(delay).then(
+      () =>
+        new Promise((resolve) => {
+          if (token !== demoToken) return resolve();
+          const head = L.circleMarker(pts[0], {
+            pane: "trip", radius: 5, color: COLORS[kind], weight: 2, fillColor: COLORS.panel, fillOpacity: 1, interactive: false,
+          }).addTo(group);
+          const start = performance.now();
+          const ms = 1100;
+          // A timer, not animation frames: those stop while the window is covered, and the loop would hang.
+          const step = () => {
+            if (token !== demoToken) return resolve();
+            const t = Math.min(1, (performance.now() - start) / ms);
+            const eased = t < 0.5 ? 2 * t * t : 1 - 2 * (1 - t) * (1 - t);
+            const n = Math.max(2, Math.ceil(eased * pts.length));
+            line.setLatLngs(pts.slice(0, n));
+            head.setLatLng(pts[n - 1]);
+            if (t < 1) return setTimeout(step, 16);
+            group.removeLayer(head);
+            arrive();
+            resolve();
+          };
+          step();
+        })
+    );
   }
 
-  // One home after another: its rallies fan out, one of them continues with an onward rally, all fade.
-  async function playDemo() {
-    const token = ++demoToken;
-    const hubs = demoHubs();
-    for (const s of stations.values()) {
-      if (!inEurope(s)) continue;
-      L.circleMarker([s.lat, s.lon], {
-        pane: "stations", radius: 4, color: COLORS.panel, weight: 1.5, fillColor: COLORS.far, fillOpacity: 1, interactive: false,
-      }).addTo(layers.demo);
+  // Moves the map so `bounds` fills the wider free side of the card (west of home: left, east: right).
+  function demoFrame(bounds, west) {
+    const card = document.querySelector(".panel").getBoundingClientRect();
+    const size = map.getSize();
+    const left = card.left;
+    const right = size.x - card.right;
+    const opts = { maxZoom: 7, paddingTopLeft: [40, 70], paddingBottomRight: [40, 70] };
+    if (Math.max(left, right) >= 260 && size.y >= 360) {
+      // Beside the card there is room: keep the routes out from behind it.
+      if (west) opts.paddingBottomRight = [size.x - left + 30, 70];
+      else opts.paddingTopLeft = [card.right + 30, 70];
     }
-    if (!hubs.length) return;
-    const onwardFrom = new Map(hubs.map((h) => [h.from, h.to]));
+    if (reduceMotion) map.fitBounds(bounds, { ...opts, animate: false });
+    else map.flyToBounds(bounds, { ...opts, duration: 1.3 });
+    return reduceMotion ? Promise.resolve() : sleep(1400);
+  }
+
+  // Round after round for the chosen home: frame it, fan out some of its rallies, continue one of them
+  // with an onward rally, hold, fade. Rounds alternate between the rallies going west and east.
+  function playDemo() {
+    const token = ++demoToken;
+    // The map can fail mid-flight when the window is resized: start over rather than stand still.
+    runDemo(token).catch(() => setTimeout(() => token === demoToken && playDemo(), 1500));
+  }
+
+  async function runDemo(token) {
+    if (demoGroup) layers.demo.removeLayer(demoGroup);
+    demoHome = homeById.get($("home").value);
+    const home = stations.get(demoHome);
+    const dests = demoDestinations(home);
+    const sides = [dests.filter((id) => stations.get(id).lon < home.lon), dests.filter((id) => stations.get(id).lon >= home.lon)];
+    let west = sides[0].length >= sides[1].length;
+
     while (token === demoToken) {
-      const hub = hubs[Math.floor(Math.random() * hubs.length)];
-      const group = L.layerGroup().addTo(layers.demo);
-      const home = stations.get(hub.from);
+      const group = (demoGroup = L.layerGroup().addTo(layers.demo));
+      const chosen = pickSome(sides[west ? 0 : 1], 4);
+      const bounds = L.latLng(home.lat, home.lon).toBounds(150000);
+      for (const id of chosen) bounds.extend([stations.get(id).lat, stations.get(id).lon]);
+      await demoFrame(bounds, west);
+      if (token !== demoToken) return;
+
       L.marker([home.lat, home.lon], { icon: homeIcon, pane: "trip", interactive: false, keyboard: false }).addTo(group);
-      const dests = pickSome(hub.to, 4);
-      await Promise.all(dests.map((to, i) => demoLine(group, hub.from, to, "out", i * 350, token)));
-      const onward = (onwardFrom.get(dests[0]) || []).filter((id) => id !== hub.from && !dests.includes(id));
-      if (onward.length) await demoLine(group, dests[0], pickSome(onward, 1)[0], "mid", 0, token);
+      if (!reduceMotion) demoPulse(group, home, COLORS.ink);
+      await Promise.all(chosen.map((to, i) => demoLine(group, demoHome, to, "out", 250 + i * 320, token)));
+      if (token !== demoToken) return;
+
+      // One onward rally from a destination, if it ends inside the picture and not behind the card.
+      const size = map.getSize();
+      const card = document.querySelector(".panel").getBoundingClientRect();
+      const inView = (id) => {
+        const p = map.latLngToContainerPoint([stations.get(id).lat, stations.get(id).lon]);
+        const beside = p.x < card.left - 20 || p.x > card.right + 20 || p.y < card.top - 20 || p.y > card.bottom + 20;
+        return beside && p.x > 30 && p.x < size.x - 30 && p.y > 30 && p.y < size.y - 30;
+      };
+      for (const stop of chosen) {
+        const onward = demoDestinations(stations.get(stop)).filter((id) => id !== demoHome && !chosen.includes(id) && inView(id));
+        if (!onward.length) continue;
+        await demoLine(group, stop, pickSome(onward, 1)[0], "mid", 150, token);
+        break;
+      }
       if (reduceMotion || token !== demoToken) return; // without motion: one still picture
-      await sleep(1600);
+      await sleep(chosen.length ? 2400 : 4000);
+      if (token !== demoToken) return;
       group.eachLayer((l) => l.getElement() && l.getElement().classList.add("demo-fade"));
       await sleep(650);
       layers.demo.removeLayer(group);
+      if (sides[west ? 1 : 0].length) west = !west;
     }
   }
 
@@ -1937,6 +2008,11 @@
     $("landingStats").textContent =
       `${total.toLocaleString("en-GB")} ${total === 1 ? "rally" : "rallies"} · ` +
       `${stations.size.toLocaleString("en-GB")} stations · updated ${when}`;
+    for (const s of stations.values()) {
+      L.circleMarker([s.lat, s.lon], {
+        pane: "stations", radius: 4, color: COLORS.panel, weight: 1.5, fillColor: COLORS.far, fillOpacity: 1, interactive: false,
+      }).addTo(layers.demo);
+    }
     playDemo();
   }
 
@@ -1949,6 +2025,7 @@
     if (error) return;
     landing = false;
     demoToken++;
+    map.stop(); // the preview may be mid-flight
     layers.demo.clearLayers();
     saveSettings();
 
