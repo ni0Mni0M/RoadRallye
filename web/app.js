@@ -128,6 +128,7 @@
     stations: L.layerGroup().addTo(map),
     wayHome: L.layerGroup().addTo(map),
     trip: L.layerGroup().addTo(map),
+    demo: L.layerGroup().addTo(map), // the sample routes behind the landing page
   };
 
   const homeIcon = L.divIcon({
@@ -168,6 +169,7 @@
       '<li class="empty">Run <code>update-data.bat</code> (or <code>python scraper/fetch_rallies.py</code>) ' +
       "to download the current rallies, then reload this page.</li>";
     $("playAll").hidden = true;
+    document.documentElement.classList.remove("landing"); // nothing to choose from yet
     return;
   }
 
@@ -297,6 +299,9 @@
   let animToken = 0;
   let playToken = 0;
   let playing = false;
+  let landing = document.documentElement.classList.contains("landing"); // set in index.html on a first visit
+  let mapInsetLeft = 0; // px of the map hidden under the panel while the landing page slides away
+  let demoToken = 0;
 
   // What differs between the two kinds of trip.
   const oneWay = () => settings.tripType === "oneway";
@@ -403,6 +408,7 @@
   let debounce;
   function onFilterChange() {
     updateOutputs();
+    if (landing) return; // nothing is searched or saved before "Show trips"
     clearTimeout(debounce);
     debounce = setTimeout(() => {
       readForm();
@@ -482,12 +488,16 @@
     }
   }
 
-  function compute() {
-    let error = "";
-    if (!settings.earliest || !settings.latest) error = "Pick both dates.";
-    else if (settings.latest < settings.earliest) {
-      error = `The ${oneWay() ? "latest drop-off" : "back-by date"} is before the earliest pickup.`;
+  function dateError() {
+    if (!settings.earliest || !settings.latest) return "Pick both dates.";
+    if (settings.latest < settings.earliest) {
+      return `The ${oneWay() ? "latest drop-off" : "back-by date"} is before the earliest pickup.`;
     }
+    return "";
+  }
+
+  function compute() {
+    const error = dateError();
     $("dateError").textContent = error;
 
     allTrips = error ? [] : tripsFrom(stations.get(settings.home), visibleRallies());
@@ -1214,7 +1224,12 @@
       const s = stations.get(id);
       bounds.extend([s.lat, s.lon]);
     }
-    map.fitBounds(bounds, { padding: [40, 40], maxZoom: 8, animate: !reduceMotion });
+    map.fitBounds(bounds, {
+      paddingTopLeft: [40 + mapInsetLeft, 40],
+      paddingBottomRight: [40, 40],
+      maxZoom: 8,
+      animate: !reduceMotion,
+    });
   }
 
   function runLeg(line, van, pts, duration, token) {
@@ -1843,6 +1858,140 @@
     }
   });
 
+  // ---------- Landing page ----------
+
+  // On a first visit the panel is a card over a full-window map (see style.css) that asks for home,
+  // dates and the kind of trip, while sample routes play behind it.
+
+  const inEurope = (s) => s && s.lat > 35 && s.lat < 62 && s.lon > -11 && s.lon < 26; // what the landing map shows
+
+  // Stations with rallies to at least two other places, each with those places.
+  function demoHubs() {
+    const byHub = new Map();
+    for (const r of data.rallies) {
+      if (r.from === r.to || !inEurope(stations.get(r.from)) || !inEurope(stations.get(r.to))) continue;
+      if (!byHub.has(r.from)) byHub.set(r.from, new Set());
+      byHub.get(r.from).add(r.to);
+    }
+    return [...byHub].filter(([, to]) => to.size >= 2).map(([from, to]) => ({ from, to: [...to] }));
+  }
+
+  const pickSome = (list, n) => [...list].sort(() => Math.random() - 0.5).slice(0, n);
+
+  // Draws a line from its first point to its last over `ms`.
+  function growLine(line, pts, ms, token) {
+    return new Promise((resolve) => {
+      const start = performance.now();
+      // A timer, not animation frames: those stop while the window is covered, and the loop would hang.
+      const step = () => {
+        if (token !== demoToken) return resolve();
+        const t = Math.min(1, (performance.now() - start) / ms);
+        const eased = t < 0.5 ? 2 * t * t : 1 - (2 * (1 - t) * (1 - t));
+        line.setLatLngs(pts.slice(0, Math.max(2, Math.ceil(eased * pts.length))));
+        if (t < 1) setTimeout(step, 16);
+        else resolve();
+      };
+      step();
+    });
+  }
+
+  function demoLine(group, from, to, kind, delay, token) {
+    const pts = arc(stations.get(from), stations.get(to));
+    const line = L.polyline(reduceMotion ? pts : [pts[0], pts[0]], {
+      pane: "trip", color: COLORS[kind], weight: 3.5, opacity: 0.9, lineCap: "round", interactive: false,
+    }).addTo(group);
+    return reduceMotion ? Promise.resolve() : sleep(delay).then(() => growLine(line, pts, 900, token));
+  }
+
+  // One home after another: its rallies fan out, one of them continues with an onward rally, all fade.
+  async function playDemo() {
+    const token = ++demoToken;
+    const hubs = demoHubs();
+    for (const s of stations.values()) {
+      if (!inEurope(s)) continue;
+      L.circleMarker([s.lat, s.lon], {
+        pane: "stations", radius: 4, color: COLORS.panel, weight: 1.5, fillColor: COLORS.far, fillOpacity: 1, interactive: false,
+      }).addTo(layers.demo);
+    }
+    if (!hubs.length) return;
+    const onwardFrom = new Map(hubs.map((h) => [h.from, h.to]));
+    while (token === demoToken) {
+      const hub = hubs[Math.floor(Math.random() * hubs.length)];
+      const group = L.layerGroup().addTo(layers.demo);
+      const home = stations.get(hub.from);
+      L.marker([home.lat, home.lon], { icon: homeIcon, pane: "trip", interactive: false, keyboard: false }).addTo(group);
+      const dests = pickSome(hub.to, 4);
+      await Promise.all(dests.map((to, i) => demoLine(group, hub.from, to, "out", i * 350, token)));
+      const onward = (onwardFrom.get(dests[0]) || []).filter((id) => id !== hub.from && !dests.includes(id));
+      if (onward.length) await demoLine(group, dests[0], pickSome(onward, 1)[0], "mid", 0, token);
+      if (reduceMotion || token !== demoToken) return; // without motion: one still picture
+      await sleep(1600);
+      group.eachLayer((l) => l.getElement() && l.getElement().classList.add("demo-fade"));
+      await sleep(650);
+      layers.demo.removeLayer(group);
+    }
+  }
+
+  function startLanding() {
+    const total = [...offers.values()].reduce((n, set) => n + set.size, 0);
+    $("landingStats").textContent =
+      `${total.toLocaleString("en-GB")} ${total === 1 ? "rally" : "rallies"} · ` +
+      `${stations.size.toLocaleString("en-GB")} stations · updated ${when}`;
+    playDemo();
+  }
+
+  // "Show trips": keep the choices, then slide the card to where the panel belongs.
+  function leaveLanding() {
+    if (!landing) return;
+    readForm();
+    const error = dateError();
+    $("dateError").textContent = error;
+    if (error) return;
+    landing = false;
+    demoToken++;
+    layers.demo.clearLayers();
+    saveSettings();
+
+    const root = document.documentElement;
+    const panel = document.querySelector(".panel");
+    if (reduceMotion || !window.matchMedia("(min-width: 821px)").matches) {
+      // Narrow windows stack map and panel, so there is nowhere to slide to.
+      root.classList.remove("landing");
+      map.invalidateSize();
+      compute();
+      return;
+    }
+
+    const from = panel.getBoundingClientRect();
+    const px = (n) => `${n}px`;
+    Object.assign(panel.style, {
+      left: px(from.left), top: px(from.top), width: px(from.width), height: px(from.height), transform: "none", maxHeight: "none",
+    });
+    root.classList.replace("landing", "landing-leave");
+    void panel.offsetWidth; // start the slide from the card's place
+    mapInsetLeft = 410; // the panel's width in the two-column layout (.app in style.css)
+    Object.assign(panel.style, { left: "0px", top: "0px", width: px(mapInsetLeft), height: px(window.innerHeight) });
+    compute(); // the map is still full-window: fitOverview leaves room for the panel
+
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      root.classList.remove("landing-leave");
+      panel.removeAttribute("style");
+      // The map shrinks to the right of the panel; keep what it shows where it is.
+      map.invalidateSize({ pan: false });
+      map.panBy([mapInsetLeft, 0], { animate: false });
+      mapInsetLeft = 0;
+    };
+    panel.addEventListener("transitionend", (e) => {
+      if (e.target === panel && e.propertyName === "width") finish();
+    });
+    setTimeout(finish, 1200);
+  }
+
+  $("landingGo").addEventListener("click", leaveLanding);
+
   // ---------- Start ----------
 
   // Data saved before Imoova was added has one fetched_at and no sources.
@@ -1871,5 +2020,6 @@
   fillHomeSelect();
   fillProviders();
   writeForm();
-  compute();
+  if (landing) startLanding();
+  else compute();
 })();

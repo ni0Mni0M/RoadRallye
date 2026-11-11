@@ -5,6 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Rally Trips</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+  <script>
+    // First visit (no saved settings yet) or "?landing" in the address: start with the landing page.
+    // Decided here, before anything is drawn, so the normal layout doesn't flash first.
+    try {
+      if (!localStorage.getItem("rally-finder-settings-v1") || /[?&]landing\b/.test(location.search)) {
+        document.documentElement.classList.add("landing");
+      }
+    } catch (e) {
+      document.documentElement.classList.add("landing");
+    }
+  </script>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -12,6 +23,7 @@
     <aside class="panel">
       <header class="panel-head">
         <h1>Rally trips</h1>
+        <p class="landing-title landing-only">Where does your trip start?</p>
         <p class="meta" id="dataInfo">Loading rallies…</p>
       </header>
 
@@ -141,6 +153,13 @@
           </div>
         </fieldset>
       </form>
+
+      <div class="landing-foot landing-only">
+        <button type="button" id="landingGo" class="landing-go">Show trips
+          <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M2 8h11M9 4l4 4-4 4"/></svg>
+        </button>
+        <p id="landingStats"></p>
+      </div>
 
       <div class="segmented view-switch" role="radiogroup" aria-label="Show">
         <label><input type="radio" name="view" value="trips"><span>Trips</span></label>
