@@ -31,17 +31,43 @@
   };
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  const css = getComputedStyle(document.documentElement);
-  const cssVar = (name) => css.getPropertyValue(name).trim();
+  // The map's colours point at the variables in style.css rather than holding their values,
+  // so everything already drawn follows a switch between the light and the dark theme.
   const COLORS = {
-    out: cssVar("--out"),
-    back: cssVar("--back"),
-    mid: cssVar("--mid"),
-    hop: cssVar("--hop"),
-    far: cssVar("--far"),
-    panel: cssVar("--panel"),
-    ink: cssVar("--text"),
+    out: "var(--out)",
+    back: "var(--back)",
+    mid: "var(--mid)",
+    hop: "var(--hop)",
+    far: "var(--far)",
+    panel: "var(--panel)",
+    ink: "var(--text)",
   };
+
+  // ---------- Theme ----------
+
+  // The page follows the system until the sun/moon button is used; index.html applies a saved choice.
+  const THEME_KEY = "rally-finder-theme";
+  const systemDark = window.matchMedia("(prefers-color-scheme: dark)");
+  const darkNow = () => (document.documentElement.dataset.theme || (systemDark.matches ? "dark" : "light")) === "dark";
+
+  function labelThemeToggle() {
+    const label = `Switch to the ${darkNow() ? "light" : "dark"} theme`;
+    $("themeToggle").title = label;
+    $("themeToggle").setAttribute("aria-label", label);
+  }
+
+  $("themeToggle").addEventListener("click", () => {
+    const theme = darkNow() ? "light" : "dark";
+    document.documentElement.dataset.theme = theme;
+    try {
+      localStorage.setItem(THEME_KEY, theme);
+    } catch (e) {
+      // Blocked storage: the theme lasts until the page is closed.
+    }
+    labelThemeToggle();
+  });
+  systemDark.addEventListener("change", labelThemeToggle);
+  labelThemeToggle();
 
   const dayFmt = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
   const fmtDay = (iso) => dayFmt.format(new Date(iso + "T00:00:00Z"));

@@ -99,6 +99,19 @@ body {
 
 .meta { color: var(--muted); font-size: 13px; margin: 4px 0 0; }
 
+/* Light | dark, top right of the panel: the moon offers dark, the sun offers light. */
+.panel-head { position: relative; }
+.panel-head h1 { padding-right: 36px; }
+.theme-toggle { position: absolute; top: 0; right: 0; display: grid; place-items: center; padding: 0; }
+.theme-toggle svg { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.theme-toggle .sun { display: none; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .theme-toggle .sun { display: block; }
+  :root:not([data-theme="light"]) .theme-toggle .moon { display: none; }
+}
+:root[data-theme="dark"] .theme-toggle .sun { display: block; }
+:root[data-theme="dark"] .theme-toggle .moon { display: none; }
+
 .stale {
   display: block;
   margin-top: 6px;
