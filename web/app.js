@@ -240,7 +240,8 @@
     fuelPrice: 1.8,
     hideProviders: [],
     rallyFee: 129,
-    insurance: 15,
+    insurance: 15, // the package's price per day; only counted when includeInsurance is on
+    includeInsurance: false, // ticked in a trip's cost details
     vanConsumption: 10,
     normalDayPrice: 90, // what a van costs per day without the rally discount (a rough guess)
     oneWayFee: 250, // what dropping it off at another station costs on a normal rental (a rough guess)
@@ -274,6 +275,7 @@
     if (!ONE_WAY_LEG_CHOICES.includes(s.legsOneWay)) s.legsOneWay = DEFAULTS.legsOneWay;
     if (!HOME_MODES.includes(s.homeMode)) s.homeMode = DEFAULTS.homeMode;
     s.wayHome = s.wayHome === true;
+    s.includeInsurance = s.includeInsurance === true;
     if (!TIME_OF_DAY.test(s.dropoffTime)) s.dropoffTime = DEFAULTS.dropoffTime;
     for (const key of ["carConsumption", "fuelPrice", "vanConsumption"]) if (!(s[key] > 0)) s[key] = DEFAULTS[key];
     for (const key of NOT_NEGATIVE) if (!(s[key] >= 0)) s[key] = DEFAULTS[key];
@@ -387,7 +389,7 @@
   ]);
   const RADIOS = ["tripType", "legs", "legsOneWay"]; // the segmented choices inside the filter form
   // Chosen outside the filter form (view switch, ranking controls), so readForm keeps them.
-  const OUTSIDE_FORM = ["homeMode", "view", "rankMode", "rankBy", "combine", "onlyFavs", "hideVisited"];
+  const OUTSIDE_FORM = ["includeInsurance", "homeMode","view", "rankMode", "rankBy", "combine", "onlyFavs", "hideVisited"];
 
   function writeForm() {
     for (const key of FIELDS) $(key).value = settings[key];
@@ -572,7 +574,7 @@
 
   const costSettings = () => ({
     rallyFee: settings.rallyFee,
-    insurancePerDay: settings.insurance,
+    insurancePerDay: settings.includeInsurance ? settings.insurance : 0,
     vanLitresPer100Km: settings.vanConsumption,
     fuelPrice: settings.fuelPrice,
     priceEur,
@@ -721,15 +723,23 @@
     const times = (n, amount) => (n > 1 ? `${n} × ${euros(amount)}` : "");
     const dist = `${fmtKm(f.roadKm)}${f.measured ? "" : " (estimated)"}`;
 
+    // Insurance is extra: a ticked box adds it to every trip's total (and to the normal rental, which
+    // would need the same cover). Rallies with a listed price have none to add.
+    const insured = settings.includeInsurance;
+    const insurance = p.feeLegs && settings.insurance > 0 ? p.feeDays * settings.insurance : 0;
+
     const rally = [];
-    if (p.feeLegs) {
-      rally.push(row(`Rally fee${p.feeLegs > 1 ? `, ${times(p.feeLegs, settings.rallyFee)}` : ""}`, euros(p.feeLegs * settings.rallyFee)));
-      if (settings.insurance > 0) {
-        rally.push(row(`Insurance, ${plural(p.feeDays, "day")} × ${euros(settings.insurance)}`, euros(p.feeDays * settings.insurance)));
-      }
-    }
+    if (p.feeLegs) rally.push(row(`Rally fee${p.feeLegs > 1 ? `, ${times(p.feeLegs, settings.rallyFee)}` : ""}`, euros(p.feeLegs * settings.rallyFee)));
     if (p.listedLegs) rally.push(row(p.listedLegs > 1 ? `Listed prices, ${p.listedLegs} rallies` : "Listed price", euros(p.listedRent)));
     rally.push(row(`Fuel, ${dist}`, euros(f.fuel)));
+    if (insurance) {
+      rally.push(
+        `<label class="cost-row cost-opt${insured ? " on" : ""}" title="Adds the insurance to the total of every trip">` +
+        `<span><input type="checkbox" data-insurance${insured ? " checked" : ""}>` +
+        `Insurance (optional), ${plural(p.feeDays, "day")} × ${euros(settings.insurance)}</span>` +
+        `<span>${insured ? "" : "+ "}${euros(insurance)}</span></label>`
+      );
+    }
     rally.push(row("Total", `≈ ${euros(f.cost)}`, " cost-sum"));
 
     const n = t.legs.length;
@@ -738,8 +748,9 @@
       row(`Rent, ${plural(f.rallyDays, "day")} × ${euros(settings.normalDayPrice)}`, euros(f.rallyDays * settings.normalDayPrice)),
       row(`One-way fee${n > 1 ? `, ${times(n, settings.oneWayFee)}` : ""}`, euros(n * settings.oneWayFee)),
       row("Fuel, same route", euros(f.fuel)),
-      row("Total", `≈ ${euros(normalCost)}`, " cost-sum"),
     ];
+    if (insurance && insured) normal.push(row("Insurance, same cover", euros(insurance)));
+    normal.push(row("Total", `≈ ${euros(normalCost)}`, " cost-sum"));
     const saves = f.saving > 0;
     const outcome = saves
       ? row("You save", `≈ ${euros(f.saving)} (${Math.round((f.saving / normalCost) * 100)}%)`, " cost-save")
@@ -747,7 +758,7 @@
     const id = `costs-${esc(t.id)}`;
 
     return (
-      `<p class="facts" title="Rental (rally fee and insurance, or the listed price) and diesel for ${dist}; no tolls">` +
+      `<p class="facts" title="Rental (rally fee${insured ? " and insurance" : ""}, or the listed price) and diesel for ${dist}; no tolls">` +
       `<strong class="cost-total">≈ ${euros(f.cost)}</strong> · rent ${euros(f.rent)} + fuel ${euros(f.fuel)}</p>` +
       `<button type="button" class="cost-toggle${saves ? " saves" : ""}" data-costs aria-expanded="${open}" aria-controls="${id}">` +
       `<span>${saves ? `You save ≈ ${euros(f.saving)}` : "Cost details"}</span><span class="cost-chevron" aria-hidden="true"></span></button>` +
@@ -1870,6 +1881,7 @@
       more.remove();
       return;
     }
+    if (e.target.closest(".cost-opt")) return; // the insurance box; its "change" is handled below
     // Opening the cost details doesn't also select the trip.
     const costs = e.target.closest("[data-costs]");
     if (costs) {
@@ -1891,6 +1903,19 @@
     }
     const li = e.target.closest(".trip");
     if (li) selectTrip(li.dataset.id);
+  });
+
+  // The insurance box in any trip's cost details counts insurance in or out for all trips.
+  $("results").addEventListener("change", (e) => {
+    if (!e.target.matches("[data-insurance]")) return;
+    const id = e.target.closest(".trip").dataset.id;
+    settings.includeInsurance = e.target.checked;
+    saveSettings();
+    stopPlay();
+    compute();
+    // The list was redrawn (and re-sorted, by cost); stay on the box that was ticked.
+    const box = $("results").querySelector(`[data-id="${CSS.escape(id)}"] [data-insurance]`);
+    if (box) box.focus({ preventScroll: true });
   });
 
   $("results").addEventListener("keydown", (e) => {

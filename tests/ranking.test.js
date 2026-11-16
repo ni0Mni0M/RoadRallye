@@ -192,9 +192,26 @@ test("a listed price is kept apart from the rally fee in the rent", () => {
 
 test("a normal rental is a price per day plus a one-way fee for each rally", () => {
   const f = R.tripFacts(madridHome(), { stations, routes, costs: { ...costs, normalDayPrice: 90, oneWayFee: 250 } });
-  // 2 rallies of 7 days: 14 × 90 + 2 × 250, against 2 × (129 + 105) with the rallies
-  assert.equal(f.normalRent, 14 * 90 + 2 * 250);
-  assert.equal(f.saving, 1760 - 468);
+  // 2 rallies of 7 days: 14 × 90 + 2 × 250 + the same insurance, against 2 × (129 + 105) with the rallies
+  assert.equal(f.normalRent, 14 * 90 + 2 * 250 + 14 * 15);
+  assert.equal(f.saving, 1760 - 2 * 129);
+});
+
+test("insurance is on both sides of the comparison, so leaving it out keeps the saving", () => {
+  const normal = { normalDayPrice: 90, oneWayFee: 250 };
+  const withCover = R.tripFacts(madridHome(), { stations, routes, costs: { ...costs, ...normal } });
+  const without = R.tripFacts(madridHome(), { stations, routes, costs: { ...costs, ...normal, insurancePerDay: 0 } });
+  assert.equal(without.rent, 2 * 129);
+  assert.equal(without.normalRent, 14 * 90 + 2 * 250);
+  assert.equal(without.saving, withCover.saving);
+});
+
+test("a rally with a listed price gets no insurance on either side", () => {
+  const leg = { from: 51, to: 20, pickup: "2026-11-03", return: "2026-11-10", price: 50 };
+  const priceEur = (r) => r.price;
+  const f = R.tripFacts({ legs: [leg], totalDays: 7 }, { stations, routes, costs: { ...costs, priceEur, normalDayPrice: 90, oneWayFee: 250 } });
+  assert.equal(f.rent, 50);
+  assert.equal(f.normalRent, 7 * 90 + 250);
 });
 
 test("without a normal price there is nothing to compare with", () => {

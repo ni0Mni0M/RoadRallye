@@ -481,6 +481,11 @@ input[type="range"] { width: 100%; margin: 4px 0; accent-color: var(--text); }
 .cost-row span:first-child { min-width: 0; }
 .cost-row span:last-child { white-space: nowrap; }
 .cost-sum { margin-top: 4px; padding-top: 6px; border-top: 1px solid var(--line); color: var(--text); font-weight: 600; }
+/* Insurance is optional: italic in a dashed frame until its box is ticked. */
+.cost-opt { margin: 3px -6px; padding: 3px 6px; border: 1px dashed var(--far); border-radius: 6px; font-style: italic; cursor: pointer; align-items: center; }
+.cost-opt span:first-child { display: flex; align-items: center; gap: 6px; }
+.cost-opt input { flex: none; width: 14px; height: 14px; margin: 0; accent-color: var(--out); }
+.cost-opt.on { border-style: solid; border-color: var(--line); font-style: normal; }
 .cost-save { margin-top: 6px; color: var(--out); font-weight: 500; }
 .cost-note { margin: 6px 0 0; font-size: 12px; }
 
