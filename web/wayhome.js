@@ -54,36 +54,114 @@
     return points;
   }
 
-  const MODE_WORDS = { BUS: "Bus", COACH: "Coach", TRAM: "Tram", FERRY: "Ferry", SUBWAY: "U" };
+  const VEHICLE_ORDER = ["train", "bus", "ferry"];
+  const NOT_A_RIDE = new Set(["WALK", "BIKE", "CAR", "RENTAL", "CAR_PARKING", "CAR_DROPOFF"]);
 
-  // Name of a ride as people say it: "ICE 798", "RE30", "Bus 481" (bare numbers get their mode).
-  function lineName(leg) {
-    const name = leg.displayName || leg.routeShortName || "";
-    if (!name) return MODE_WORDS[leg.mode] || "Train";
-    return /^\d+$/.test(name) && MODE_WORDS[leg.mode] ? `${MODE_WORDS[leg.mode]} ${name}` : name;
+  // Everything on rails (also tram and underground) counts as train.
+  function vehicleKind(mode) {
+    if (mode === "BUS" || mode === "COACH") return "bus";
+    if (mode === "FERRY") return "ferry";
+    return "train";
+  }
+
+  function localParts(iso, timeZone) {
+    const opts = { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" };
+    let parts;
+    try {
+      parts = new Intl.DateTimeFormat("en-CA", { ...opts, timeZone: timeZone || undefined }).formatToParts(new Date(iso));
+    } catch (e) {
+      parts = new Intl.DateTimeFormat("en-CA", opts).formatToParts(new Date(iso)); // unknown time zone name
+    }
+    const get = (type) => parts.find((p) => p.type === type).value;
+    return { day: `${get("year")}-${get("month")}-${get("day")}`, minutes: Number(get("hour")) * 60 + Number(get("minute")) };
+  }
+
+  /** The calendar day (YYYY-MM-DD) of a moment in a time zone. */
+  function localDay(iso, timeZone) {
+    return localParts(iso, timeZone).day;
+  }
+
+  const NIGHT_FROM_MIN = 60; // 01:00
+  const NIGHT_TO_MIN = 300; // 05:00
+
+  /** Whether a trip has you on the road between 01:00 and 05:00, by the clock where it starts. */
+  function isOvernight(startIso, durationMin, timeZone) {
+    const from = localParts(startIso, timeZone).minutes;
+    const to = from + durationMin;
+    for (let night = NIGHT_FROM_MIN; night < to; night += 1440) {
+      if (from < night + (NIGHT_TO_MIN - NIGHT_FROM_MIN) && to > night) return true;
+    }
+    return false;
   }
 
   /** Short summary of a Transitous itinerary for the connection list. */
   function summarizeItinerary(it) {
     const legs = it.legs || [];
-    const rides = legs.filter((l) => l.mode !== "WALK");
+    const kinds = new Set(legs.filter((l) => !NOT_A_RIDE.has(l.mode)).map((l) => vehicleKind(l.mode)));
+    const startTz = legs.length ? legs[0].from.tz || null : null;
+    const durationMin = it.duration / 60;
     return {
       start: it.startTime,
       end: it.endTime,
-      durationMin: it.duration / 60,
+      durationMin,
       transfers: it.transfers,
-      lines: rides.map(lineName),
-      startTz: legs.length ? legs[0].from.tz || null : null,
+      vehicles: VEHICLE_ORDER.filter((k) => kinds.has(k)),
+      overnight: isOvernight(it.startTime, durationMin, startTz),
+      startTz,
       endTz: legs.length ? legs[legs.length - 1].to.tz || null : null,
     };
   }
 
-  function fastestIndex(summaries) {
-    let best = -1;
-    summaries.forEach((s, i) => {
-      if (best < 0 || s.durationMin < summaries[best].durationMin) best = i;
-    });
-    return best;
+  const OVERNIGHT_PENALTY_MIN = 180;
+  const CHANGE_PENALTY_MIN = 30;
+  const WAIT_PENALTY_MIN = 60;
+  const SAME_TRIP_MIN = 20;
+
+  const daysApart = (fromDay, toDay) => Math.round((Date.parse(`${toDay}T00:00:00Z`) - Date.parse(`${fromDay}T00:00:00Z`)) / 864e5);
+
+  // How unpleasant a connection is, in minutes: its length, plus extra for a night on the road, each
+  // change, and each day you wait before it leaves (a slightly better trip tomorrow isn't worth a hotel).
+  function comfortScore(s, firstDay) {
+    return (
+      s.durationMin +
+      (s.overnight ? OVERNIGHT_PENALTY_MIN : 0) +
+      s.transfers * CHANGE_PENALTY_MIN +
+      daysApart(firstDay, localDay(s.start, s.startTz)) * WAIT_PENALTY_MIN
+    );
+  }
+
+  // The same kind of trip a bit later on the same day is no real alternative.
+  function muchAlike(a, b) {
+    return (
+      a.transfers === b.transfers &&
+      a.overnight === b.overnight &&
+      Math.abs(a.durationMin - b.durationMin) <= SAME_TRIP_MIN &&
+      localDay(a.start, a.startTz) === localDay(b.start, b.startTz)
+    );
+  }
+
+  /**
+   * Which connections to show, as indexes into `summaries`: the fastest one first, then the most
+   * comfortable real alternatives in the order they leave.
+   */
+  function pickConnections(summaries, count = 3) {
+    const earlier = (a, b) => new Date(summaries[a].start) - new Date(summaries[b].start);
+    const all = summaries.map((_, i) => i);
+    if (!all.length) return [];
+    const fastest = all.reduce((best, i) =>
+      (summaries[i].durationMin - summaries[best].durationMin || earlier(i, best)) < 0 ? i : best);
+    const firstDay = summaries.map((s) => localDay(s.start, s.startTz)).sort()[0];
+    const score = summaries.map((s) => comfortScore(s, firstDay));
+    const ranked = all.filter((i) => i !== fastest).sort((a, b) => score[a] - score[b] || earlier(a, b));
+
+    const picked = [fastest];
+    const skipped = [];
+    for (const i of ranked) {
+      if (picked.some((p) => muchAlike(summaries[p], summaries[i]))) skipped.push(i);
+      else picked.push(i);
+    }
+    const chosen = picked.concat(skipped).slice(0, count);
+    return [chosen[0], ...chosen.slice(1).sort(earlier)];
   }
 
   function fuelCost(km, litresPer100Km, pricePerLitre) {
@@ -100,8 +178,10 @@
     homePoint,
     transitEstimate,
     decodePolyline,
+    localDay,
+    isOvernight,
     summarizeItinerary,
-    fastestIndex,
+    pickConnections,
     fuelCost,
     googleMapsUrl,
   };

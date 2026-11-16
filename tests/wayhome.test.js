@@ -51,17 +51,82 @@ const itinerary = {
   ],
 };
 
-test("summarizes an itinerary with readable line names", () => {
+test("summarizes an itinerary without line names", () => {
   const s = W.summarizeItinerary(itinerary);
   assert.equal(s.durationMin, 341);
-  assert.deepEqual(s.lines, ["Bus 481", "RE30 (4156)", "ICE 798"]);
+  assert.deepEqual(s.vehicles, ["train", "bus"]);
+  assert.equal(s.overnight, false);
+  assert.equal(s.lines, undefined);
   assert.equal(s.startTz, "Europe/Berlin");
   assert.equal(s.endTz, "Europe/Berlin");
+  const rail = { ...itinerary, legs: itinerary.legs.filter((l) => l.mode !== "BUS") };
+  assert.deepEqual(W.summarizeItinerary(rail).vehicles, ["train"]);
+  const coach = { ...itinerary, legs: [{ mode: "COACH", from: {}, to: {} }] };
+  assert.deepEqual(W.summarizeItinerary(coach).vehicles, ["bus"]);
 });
 
-test("finds the fastest connection", () => {
-  assert.equal(W.fastestIndex([{ durationMin: 340 }, { durationMin: 300 }, { durationMin: 310 }]), 1);
-  assert.equal(W.fastestIndex([]), -1);
+test("spots a night on the road by the local clock", () => {
+  // Berlin is UTC+1 in November.
+  assert.equal(W.isOvernight("2026-11-21T15:10:00Z", 13.5 * 60, "Europe/Berlin"), true); // 16:10 -> 05:40
+  assert.equal(W.isOvernight("2026-11-21T07:04:00Z", 6 * 60, "Europe/Berlin"), false); // 08:04 -> 14:04
+  assert.equal(W.isOvernight("2026-11-21T20:00:00Z", 3 * 60, "Europe/Berlin"), false); // 21:00 -> 00:00
+  assert.equal(W.isOvernight("2026-11-21T20:00:00Z", 5 * 60, "Europe/Berlin"), true); // 21:00 -> 02:00
+  assert.equal(W.isOvernight("2026-11-22T04:30:00Z", 4 * 60, "Europe/Berlin"), false); // 05:30 -> 09:30
+  assert.equal(W.isOvernight("2026-11-22T04:30:00Z", 22 * 60, "Europe/Berlin"), true); // into the next night
+  assert.equal(W.localDay("2026-11-21T23:30:00Z", "Europe/Berlin"), "2026-11-22");
+});
+
+const option = (start, hours, transfers, overnight = false) => ({
+  start,
+  durationMin: hours * 60,
+  transfers,
+  overnight,
+  startTz: "Europe/Berlin",
+});
+
+test("puts the fastest connection of the two days first", () => {
+  const found = [
+    option("2026-11-21T11:34:00Z", 8.3, 3), // same day, many changes
+    option("2026-11-21T15:10:00Z", 13.5, 2, true), // through the night
+    option("2026-11-22T07:04:00Z", 6.1, 1), // next morning: fastest
+    option("2026-11-22T09:04:00Z", 6.2, 1), // the same trip two hours later
+    option("2026-11-22T13:00:00Z", 9, 4),
+  ];
+  // Fastest first, then the two best alternatives in the order they leave; the repeat is left out.
+  assert.deepEqual(W.pickConnections(found), [2, 0, 4]);
+  assert.deepEqual(W.pickConnections(found, 1), [2]);
+});
+
+test("prefers a day trip to a slightly shorter night trip", () => {
+  const found = [
+    option("2026-11-21T12:00:00Z", 5, 0),
+    option("2026-11-21T20:00:00Z", 8, 1, true),
+    option("2026-11-22T08:00:00Z", 9, 1),
+    option("2026-11-22T10:00:00Z", 9.5, 1),
+  ];
+  assert.deepEqual(W.pickConnections(found), [0, 2, 3]);
+});
+
+test("a slightly better trip tomorrow doesn't push out a good one today", () => {
+  const found = [
+    option("2026-11-21T12:00:00Z", 6.3, 1), // today
+    option("2026-11-21T14:30:00Z", 5.7, 3), // today, the fastest
+    option("2026-11-22T07:30:00Z", 5.9, 1), // tomorrow, a little shorter than the first
+    option("2026-11-23T07:30:00Z", 5.9, 1), // the same train the day after
+  ];
+  assert.deepEqual(W.pickConnections(found), [1, 0, 2]);
+});
+
+test("falls back to repeats when there is nothing else", () => {
+  const found = [
+    option("2026-11-21T12:00:00Z", 5, 0),
+    option("2026-11-21T14:00:00Z", 5, 0),
+    option("2026-11-21T16:00:00Z", 5, 0),
+    option("2026-11-21T18:00:00Z", 5, 0),
+  ];
+  assert.deepEqual(W.pickConnections(found), [0, 1, 2]);
+  assert.deepEqual(W.pickConnections(found.slice(0, 2)), [0, 1]);
+  assert.deepEqual(W.pickConnections([]), []);
 });
 
 test("fuel cost", () => {

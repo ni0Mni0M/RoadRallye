@@ -29,6 +29,8 @@ APP_NAME = "RoadRalley/1.0"
 CACHE_SECONDS = 3600
 # Transitous asks apps above about 720 trip searches a day to talk to them first; stay well below.
 DAILY_LIMIT = 300
+# One search covers the two days after the drop-off, so a better connection the next morning shows up.
+SEARCH_WINDOW_SECONDS = 48 * 3600
 
 COORD = re.compile(r"-?\d{1,3}(\.\d+)?,-?\d{1,3}(\.\d+)?")
 ISO_TIME = re.compile(r"\d{4}-\d\d-\d\dT\d\d:\d\d(:\d\d(\.\d+)?)?(Z|[+-]\d\d:\d\d)")
@@ -76,6 +78,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if not contact:
             return self.send_json(503, {"error": "no-contact"})
 
+        params["searchWindow"] = SEARCH_WINDOW_SECONDS
         key = urllib.parse.urlencode(params)
         with _lock:
             cached = _cache.get(key)
