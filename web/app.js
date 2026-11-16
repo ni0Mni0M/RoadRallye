@@ -1516,7 +1516,10 @@
           transitResults.set(key, { error: true, reason: body.error || "no-server" });
           return;
         }
-        const options = (body.itineraries || []).slice(0, 5).map((it) => ({ ...W.summarizeItinerary(it), legs: it.legs }));
+        // The search covers two days; keep only the three worth showing, the fastest first.
+        const found = body.itineraries || [];
+        const summaries = found.map(W.summarizeItinerary);
+        const options = W.pickConnections(summaries).map((i) => ({ ...summaries[i], legs: found[i].legs }));
         transitResults.set(key, { options });
       })
       .catch(() => transitResults.set(key, { error: true, reason: "upstream" }))
@@ -1534,13 +1537,35 @@
     }
   }
 
-  const localDay = (iso, timeZone) => {
-    try {
-      return new Date(iso).toLocaleDateString("en-CA", { timeZone: timeZone || undefined });
-    } catch (e) {
-      return new Date(iso).toLocaleDateString("en-CA");
-    }
+  const SEARCH_DAYS = 2; // serve.py asks Transitous for the 48 hours after the drop-off
+
+  const whIcon = (shapes) =>
+    '<svg class="wh-icon" viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" ' +
+    `stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${shapes}</svg>`;
+  const VEHICLES = {
+    train: {
+      word: "train",
+      icon: whIcon('<rect x="3.5" y="1.5" width="9" height="10" rx="2"/><path d="M3.5 7h9M6 9.3h.01M10 9.3h.01M5.5 11.5 4 14.5M10.5 11.5l1.5 3"/>'),
+    },
+    bus: {
+      word: "bus",
+      icon: whIcon('<rect x="2" y="2.5" width="12" height="9" rx="1.5"/><path d="M2 7.5h12M4.5 11.5v2M11.5 11.5v2M5 9.5h.01M11 9.5h.01"/>'),
+    },
+    ferry: {
+      word: "ferry",
+      icon: whIcon('<path d="M2 9.5h12l-1.5 3.5h-9zM4.5 9.5v-4h7v4M8 5.5v-3"/>'),
+    },
   };
+  const MOON_ICON = whIcon('<path d="M13 9.5A5.5 5.5 0 0 1 6.5 3 5.5 5.5 0 1 0 13 9.5z"/>');
+
+  // "Train", "Bus" or "Train and bus", with their icons in front.
+  function vehiclesHtml(kinds) {
+    if (!kinds.length) return "On foot";
+    const words = kinds.map((k) => VEHICLES[k].word).join(" and ");
+    return kinds.map((k) => VEHICLES[k].icon).join("") + words[0].toUpperCase() + words.slice(1);
+  }
+
+  const daysBetween = (fromDay, toDay) => Math.round((new Date(`${toDay}T00:00:00Z`) - new Date(`${fromDay}T00:00:00Z`)) / 864e5);
 
   const extLink = (url, text) => `<a class="book" href="${url}" target="_blank" rel="noopener">${text} ↗</a>`;
 
@@ -1551,12 +1576,12 @@
     upstream: "The timetable service didn't answer.",
   };
 
-  function transitHtml(end, home, est, live, chosen) {
+  function transitHtml(end, home, est, live, chosen, date) {
     const mapsLink = extLink(W.googleMapsUrl(end, home, "transit"), "Google Maps");
     const estimate = `About ${fmtRange(est.lowMin, est.highMin)} by train or bus`;
     if (!live) return '<p class="wh-main">Looking up connections…</p>';
     if (live.error || !live.options.length) {
-      const why = live.error ? TRANSIT_TROUBLE[live.reason] || TRANSIT_TROUBLE.upstream : "No connections found for that afternoon.";
+      const why = live.error ? TRANSIT_TROUBLE[live.reason] || TRANSIT_TROUBLE.upstream : "No connections found in the two days after the drop-off.";
       const retry = live.error && live.reason === "upstream"
         ? '<button type="button" class="wh-retry" data-mode="transit" data-retry="1">Try again</button>'
         : "";
@@ -1567,23 +1592,33 @@
       );
     }
 
-    const fastest = W.fastestIndex(live.options);
+    // The fastest connection comes first (W.pickConnections).
     const rows = live.options.map((o, i) => {
-      const nextDay = localDay(o.end, o.endTz) !== localDay(o.start, o.startTz) ? " +1" : "";
+      const startDay = W.localDay(o.start, o.startTz);
+      const later = daysBetween(date, startDay);
+      const when = later <= 0 ? "same day" : later === 1 ? "next day" : `${later} days later`;
+      const nights = daysBetween(startDay, W.localDay(o.end, o.endTz));
       const changes = o.transfers === 0 ? "direct" : plural(o.transfers, "change");
       return (
         `<li><button type="button" class="wh-option" data-itinerary="${i}" aria-pressed="${i === chosen}">` +
-        `<span class="wh-times">${fmtClock(o.start, o.startTz)} → ${fmtClock(o.end, o.endTz)}${nextDay}` +
-        `${i === fastest ? '<span class="wh-tag">Fastest</span>' : ""}</span>` +
-        `<span class="wh-dur">${fmtDuration(o.durationMin)} · ${changes}</span>` +
-        `<span class="wh-lines">${o.lines.map(esc).join(" · ")}</span>` +
+        `<span class="wh-day">${fmtDay(startDay)} · ${when}</span>` +
+        `${i === 0 ? '<span class="wh-tag">Fastest</span>' : "<span></span>"}` +
+        `<span class="wh-times">${fmtClock(o.start, o.startTz)} → ${fmtClock(o.end, o.endTz)}` +
+        `${nights > 0 ? `<span class="wh-plus">+${nights}</span>` : ""}</span>` +
+        `<span class="wh-dur">${fmtDuration(o.durationMin)}</span>` +
+        `<span class="wh-how">${vehiclesHtml(o.vehicles)} · ${changes}` +
+        `${o.overnight ? ` · <span class="wh-night">${MOON_ICON}overnight</span>` : ""}</span>` +
         "</button></li>"
       );
     });
+    const until = new Date(`${date}T${settings.dropoffTime}:00`);
+    until.setDate(until.getDate() + SEARCH_DAYS);
+    const untilDay = new Intl.DateTimeFormat("en-GB", { weekday: "short" }).format(until);
     return (
-      `<p class="wh-main">Connections after ${esc(settings.dropoffTime)}</p>` +
+      `<p class="wh-main">Best connections until ${untilDay} ${esc(settings.dropoffTime)}</p>` +
       `<ol class="wh-options">${rows.join("")}</ol>` +
-      '<p class="wh-detail">Pick one to see it on the map. Book the tickets with the train or bus company.</p>' +
+      `<p class="wh-detail">Searched ${SEARCH_DAYS * 24} hours after the ${esc(settings.dropoffTime)} drop-off. ` +
+      "Pick one to see it on the map. Book the tickets with the train or bus company.</p>" +
       `<div class="wh-links">${mapsLink}</div>` +
       '<p class="wh-credit">Times by <a href="https://transitous.org/" target="_blank" rel="noopener">Transitous</a> · ' +
       '<a href="https://transitous.org/sources/" target="_blank" rel="noopener">data sources</a></p>'
@@ -1660,7 +1695,7 @@
       });
     }
     const liveOk = live && !live.error && live.options.length > 0;
-    if (liveOk && !itineraryChoice.has(tKey)) itineraryChoice.set(tKey, W.fastestIndex(live.options));
+    if (liveOk && !itineraryChoice.has(tKey)) itineraryChoice.set(tKey, 0); // the fastest is first
     const chosen = liveOk ? itineraryChoice.get(tKey) : -1;
 
     const transit = W.transitEstimate(end, home);
@@ -1668,10 +1703,10 @@
 
     const tab = (m, label, summary) =>
       `<button type="button" role="tab" class="wh-tab" data-mode="${m}" aria-selected="${m === mode}">${label}<span>${summary}</span></button>`;
-    const body = mode === "car" ? carHtml(end, home, drive) : transitHtml(end, home, transit, live, chosen);
+    const body = mode === "car" ? carHtml(end, home, drive) : transitHtml(end, home, transit, live, chosen, date);
     const transitSummary = !live
       ? "…"
-      : liveOk ? fmtDuration(live.options[W.fastestIndex(live.options)].durationMin) : fmtRange(transit.lowMin, transit.highMin);
+      : liveOk ? fmtDuration(live.options[0].durationMin) : fmtRange(transit.lowMin, transit.highMin);
 
     panel.innerHTML =
       `<h4>Getting home from ${esc(end.name)}</h4>` +
