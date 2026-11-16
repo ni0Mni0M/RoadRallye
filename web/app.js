@@ -224,7 +224,7 @@
   const DEFAULTS = {
     home: (berlin || homeChoices[0]).id,
     startRadius: 50,
-    returnRadius: 400,
+    returnRadius: 300,
     earliest: today,
     latest: M.addDays(today, 60),
     maxWait: 2,
