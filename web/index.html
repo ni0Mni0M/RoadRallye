@@ -141,7 +141,17 @@
               <input type="number" id="fuelPrice" min="0.5" max="5" step="0.05" inputmode="decimal">
             </label>
           </div>
-          <p class="hint">Rally fee and insurance are roadsurfer's; Imoova legs use their listed price. Plus diesel for the van, no tolls.</p>
+          <div class="row">
+            <label class="field">
+              <span class="label">Normal rental (€ a day)</span>
+              <input type="number" id="normalDayPrice" min="0" max="1000" step="1" inputmode="decimal">
+            </label>
+            <label class="field">
+              <span class="label">One-way fee (€)</span>
+              <input type="number" id="oneWayFee" min="0" max="5000" step="1" inputmode="decimal">
+            </label>
+          </div>
+          <p class="hint">Rally fee and insurance are roadsurfer's; Imoova legs use their listed price. Plus diesel for the van, no tolls. The normal rental and its one-way fee are rough guesses, used to estimate what a rally saves.</p>
         </fieldset>
 
         <fieldset>

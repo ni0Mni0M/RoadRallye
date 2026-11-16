@@ -173,6 +173,36 @@ test("a leg with a listed price costs that price instead of the rally fee and in
   assert.equal(f.cost.toFixed(2), (50 + 129 + 105 + 4620 * 0.1 * 1.8).toFixed(2));
 });
 
+test("the cost splits into rent and fuel", () => {
+  const f = R.tripFacts(madridHome(), { stations, routes, costs });
+  assert.equal(f.rent, 2 * (129 + 105));
+  assert.equal(f.fuel.toFixed(2), (4620 * 0.1 * 1.8).toFixed(2));
+  assert.equal(f.cost, f.rent + f.fuel);
+  assert.deepEqual(f.costParts, { feeLegs: 2, feeDays: 14, listedLegs: 0, listedRent: 0 });
+});
+
+test("a listed price is kept apart from the rally fee in the rent", () => {
+  const t = madridHome();
+  const priced = { ...t, legs: t.legs.map((r, i) => (i === 0 ? { ...r, price: 50 } : r)) };
+  const priceEur = (r) => (typeof r.price === "number" ? r.price : null);
+  const f = R.tripFacts(priced, { stations, routes, costs: { ...costs, priceEur } });
+  assert.equal(f.rent, 50 + 129 + 105);
+  assert.deepEqual(f.costParts, { feeLegs: 1, feeDays: 7, listedLegs: 1, listedRent: 50 });
+});
+
+test("a normal rental is a price per day plus a one-way fee for each rally", () => {
+  const f = R.tripFacts(madridHome(), { stations, routes, costs: { ...costs, normalDayPrice: 90, oneWayFee: 250 } });
+  // 2 rallies of 7 days: 14 × 90 + 2 × 250, against 2 × (129 + 105) with the rallies
+  assert.equal(f.normalRent, 14 * 90 + 2 * 250);
+  assert.equal(f.saving, 1760 - 468);
+});
+
+test("without a normal price there is nothing to compare with", () => {
+  const f = R.tripFacts(madridHome(), { stations, routes, costs });
+  assert.equal(f.normalRent, null);
+  assert.equal(f.saving, null);
+});
+
 test("ranks by departure dates, backups and round trips", () => {
   const byTrips = rank("trips");
   assert.equal(byTrips[0].name, "Madrid");

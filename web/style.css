@@ -433,6 +433,57 @@ input[type="range"] { width: 100%; margin: 4px 0; accent-color: var(--text); }
 
 .facts { font-size: 13px; color: var(--muted); margin: 8px 0 0; }
 
+/* Price of a trip: the total, then a button that slides out how it adds up */
+
+.cost-total { color: var(--text); font-weight: 600; }
+
+.cost-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  margin-top: 8px;
+  padding: 3px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--muted);
+  background: var(--soft);
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.cost-toggle.saves { color: var(--out); background: color-mix(in srgb, var(--out) 12%, var(--panel)); font-weight: 500; }
+.cost-toggle:hover span:first-child { text-decoration: underline; }
+
+.cost-chevron {
+  width: 6px;
+  height: 6px;
+  margin-top: -3px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform 0.25s;
+}
+
+.cost-toggle[aria-expanded="true"] .cost-chevron { margin-top: 3px; transform: rotate(225deg); }
+
+/* Slides by growing the grid row from 0 to the height of the details. */
+.cost-slide { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.25s ease; }
+.cost-slide.open { grid-template-rows: 1fr; }
+.cost-slide > div { min-width: 0; overflow: hidden; visibility: hidden; transition: visibility 0s 0.25s; }
+.cost-slide.open > div { visibility: visible; transition-delay: 0s; }
+
+.cost-details { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: var(--soft); font-size: 13px; color: var(--muted); }
+.cost-head { font-size: 12px; margin-bottom: 2px; }
+.cost-sum + .cost-head { margin-top: 10px; }
+.cost-row { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; }
+.cost-row span:first-child { min-width: 0; }
+.cost-row span:last-child { white-space: nowrap; }
+.cost-sum { margin-top: 4px; padding-top: 6px; border-top: 1px solid var(--line); color: var(--text); font-weight: 600; }
+.cost-save { margin-top: 6px; color: var(--out); font-weight: 500; }
+.cost-note { margin: 6px 0 0; font-size: 12px; }
+
 .timeline {
   position: relative;
   height: 6px;
@@ -739,6 +790,7 @@ input[type="range"] { width: 100%; margin: 4px 0; accent-color: var(--text); }
 
 @media (prefers-reduced-motion: reduce) {
   .trip-line.flow { animation: none; }
+  .cost-slide, .cost-slide > div, .cost-chevron { transition: none; }
 }
 
 /* Phones and narrow windows: map on top, list below */

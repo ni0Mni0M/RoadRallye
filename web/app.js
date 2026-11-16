@@ -242,6 +242,8 @@
     rallyFee: 129,
     insurance: 15,
     vanConsumption: 10,
+    normalDayPrice: 90, // what a van costs per day without the rally discount (a rough guess)
+    oneWayFee: 250, // what dropping it off at another station costs on a normal rental (a rough guess)
     view: "trips",
     rankMode: "destinations",
     rankBy: "dates",
@@ -249,6 +251,7 @@
     onlyFavs: false,
     hideVisited: false,
   };
+  const NOT_NEGATIVE = ["rallyFee", "normalDayPrice", "oneWayFee"]; // amounts that may be 0
   const TIME_OF_DAY = /^\d\d:\d\d$/;
   const TRIP_TYPES = ["oneway", "round"];
   const LEG_CHOICES = ["2", "2-3", "3"];
@@ -273,7 +276,7 @@
     s.wayHome = s.wayHome === true;
     if (!TIME_OF_DAY.test(s.dropoffTime)) s.dropoffTime = DEFAULTS.dropoffTime;
     for (const key of ["carConsumption", "fuelPrice", "vanConsumption"]) if (!(s[key] > 0)) s[key] = DEFAULTS[key];
-    if (!(s.rallyFee >= 0)) s.rallyFee = DEFAULTS.rallyFee;
+    for (const key of NOT_NEGATIVE) if (!(s[key] >= 0)) s[key] = DEFAULTS[key];
     if (![0, 15, 29].includes(s.insurance)) s.insurance = DEFAULTS.insurance;
     if (!["trips", "destinations"].includes(s.view)) s.view = DEFAULTS.view;
     if (!["destinations", "starts"].includes(s.rankMode)) s.rankMode = DEFAULTS.rankMode;
@@ -320,6 +323,7 @@
   let rankRows = [];
   let shown = PAGE_SIZE;
   let selectedId = null;
+  const openCosts = new Set(); // trip ids whose cost details are slid out; kept when the list is redrawn
   let via = null; // only trips stopping at this station
   let startVia = null; // only trips starting at this station (from "Where to start")
   let animToken = 0;
@@ -375,10 +379,11 @@
   const FIELDS = [
     "home", "startRadius", "returnRadius", "earliest", "latest", "maxWait", "hopRadius", "sort",
     "dropoffTime", "carConsumption", "fuelPrice", "rallyFee", "insurance", "vanConsumption",
+    "normalDayPrice", "oneWayFee",
   ];
   const NUMERIC = new Set([
     "startRadius", "returnRadius", "maxWait", "hopRadius", "carConsumption", "fuelPrice",
-    "rallyFee", "insurance", "vanConsumption",
+    "rallyFee", "insurance", "vanConsumption", "normalDayPrice", "oneWayFee",
   ]);
   const RADIOS = ["tripType", "legs", "legsOneWay"]; // the segmented choices inside the filter form
   // Chosen outside the filter form (view switch, ranking controls), so readForm keeps them.
@@ -402,7 +407,8 @@
     for (const key of OUTSIDE_FORM) next[key] = settings[key];
     if (!TIME_OF_DAY.test(next.dropoffTime)) next.dropoffTime = DEFAULTS.dropoffTime;
     for (const key of ["carConsumption", "fuelPrice", "vanConsumption"]) if (!(next[key] > 0)) next[key] = DEFAULTS[key];
-    if (!(next.rallyFee >= 0)) next.rallyFee = DEFAULTS.rallyFee;
+    // An emptied field reads as 0, which is a valid amount here; only nonsense falls back.
+    for (const key of NOT_NEGATIVE) if (!(next[key] >= 0)) next[key] = DEFAULTS[key];
     settings = next;
   }
 
@@ -570,6 +576,8 @@
     vanLitresPer100Km: settings.vanConsumption,
     fuelPrice: settings.fuelPrice,
     priceEur,
+    normalDayPrice: settings.normalDayPrice,
+    oneWayFee: settings.oneWayFee,
   });
 
   const filterVia = (list) =>
@@ -685,10 +693,8 @@
     if (n > 1) summary.push(t.waitDays === 0 ? "no waiting" : `${plural(t.waitDays, "day")} waiting`);
     summary.push(`ends ${fmtKm(t.endKm)} from home`);
     const f = facts.get(t.id);
-    const costLine = f
-      ? `<p class="facts" title="Rental (rally fee and insurance, or the listed price) and diesel for ${fmtKm(f.roadKm)}${f.measured ? "" : " (distance estimated)"}; no tolls">` +
-        `≈ €${Math.round(f.cost).toLocaleString("en-GB")} · ${Math.round(f.kmPerDay)} km a day` +
-        `${f.countries.length > 1 ? ` · ${f.countries.join(" → ")}` : ""}</p>`
+    const paceLine = f
+      ? `<p class="facts">${Math.round(f.kmPerDay)} km a day${f.countries.length > 1 ? ` · ${f.countries.join(" → ")}` : ""}</p>`
       : "";
 
     return (
@@ -696,9 +702,64 @@
       `<h3>${title}</h3>` +
       body +
       `<p class="facts">${summary.join(" · ")}</p>` +
-      costLine +
+      paceLine +
+      (f ? costHtml(t, f) : "") +
       timelineHtml(t) +
       "</li>"
+    );
+  }
+
+  const euros = (x) => `€${Math.round(x).toLocaleString("en-GB")}`;
+
+  // The price of a trip: "≈ €719 · rent €219 + fuel €500", then a button ("You save ≈ €691") that
+  // slides out how both the rally price and the normal rental it is compared with add up.
+  // The normal rental is a guess from two settings, so everything derived from it is marked "≈".
+  function costHtml(t, f) {
+    const p = f.costParts;
+    const open = openCosts.has(t.id);
+    const row = (label, amount, cls = "") => `<div class="cost-row${cls}"><span>${label}</span><span>${amount}</span></div>`;
+    const times = (n, amount) => (n > 1 ? `${n} × ${euros(amount)}` : "");
+    const dist = `${fmtKm(f.roadKm)}${f.measured ? "" : " (estimated)"}`;
+
+    const rally = [];
+    if (p.feeLegs) {
+      rally.push(row(`Rally fee${p.feeLegs > 1 ? `, ${times(p.feeLegs, settings.rallyFee)}` : ""}`, euros(p.feeLegs * settings.rallyFee)));
+      if (settings.insurance > 0) {
+        rally.push(row(`Insurance, ${plural(p.feeDays, "day")} × ${euros(settings.insurance)}`, euros(p.feeDays * settings.insurance)));
+      }
+    }
+    if (p.listedLegs) rally.push(row(p.listedLegs > 1 ? `Listed prices, ${p.listedLegs} rallies` : "Listed price", euros(p.listedRent)));
+    rally.push(row(`Fuel, ${dist}`, euros(f.fuel)));
+    rally.push(row("Total", `≈ ${euros(f.cost)}`, " cost-sum"));
+
+    const n = t.legs.length;
+    const normalCost = f.normalRent + f.fuel;
+    const normal = [
+      row(`Rent, ${plural(f.rallyDays, "day")} × ${euros(settings.normalDayPrice)}`, euros(f.rallyDays * settings.normalDayPrice)),
+      row(`One-way fee${n > 1 ? `, ${times(n, settings.oneWayFee)}` : ""}`, euros(n * settings.oneWayFee)),
+      row("Fuel, same route", euros(f.fuel)),
+      row("Total", `≈ ${euros(normalCost)}`, " cost-sum"),
+    ];
+    const saves = f.saving > 0;
+    const outcome = saves
+      ? row("You save", `≈ ${euros(f.saving)} (${Math.round((f.saving / normalCost) * 100)}%)`, " cost-save")
+      : row("The rally costs more", `≈ ${euros(-f.saving)}`);
+    const id = `costs-${esc(t.id)}`;
+
+    return (
+      `<p class="facts" title="Rental (rally fee and insurance, or the listed price) and diesel for ${dist}; no tolls">` +
+      `<strong class="cost-total">≈ ${euros(f.cost)}</strong> · rent ${euros(f.rent)} + fuel ${euros(f.fuel)}</p>` +
+      `<button type="button" class="cost-toggle${saves ? " saves" : ""}" data-costs aria-expanded="${open}" aria-controls="${id}">` +
+      `<span>${saves ? `You save ≈ ${euros(f.saving)}` : "Cost details"}</span><span class="cost-chevron" aria-hidden="true"></span></button>` +
+      `<div class="cost-slide${open ? " open" : ""}" id="${id}"><div><div class="cost-details">` +
+      '<div class="cost-head">With the rally</div>' +
+      rally.join("") +
+      '<div class="cost-head">Normal rental (estimate)</div>' +
+      normal.join("") +
+      outcome +
+      `<p class="cost-note">Estimated from your settings: ${euros(settings.normalDayPrice)} a day plus a ` +
+      `${euros(settings.oneWayFee)} one-way fee${n > 1 ? " for each rally" : ""}.</p>` +
+      "</div></div></div>"
     );
   }
 
@@ -1807,6 +1868,17 @@
     if (more) {
       more.nextElementSibling.hidden = false;
       more.remove();
+      return;
+    }
+    // Opening the cost details doesn't also select the trip.
+    const costs = e.target.closest("[data-costs]");
+    if (costs) {
+      const id = costs.closest(".trip").dataset.id;
+      const open = !openCosts.has(id);
+      if (open) openCosts.add(id);
+      else openCosts.delete(id);
+      costs.setAttribute("aria-expanded", String(open));
+      costs.nextElementSibling.classList.toggle("open", open);
       return;
     }
     if (e.target.closest(".wayhome, .along")) return;
