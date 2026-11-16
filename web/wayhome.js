@@ -112,6 +112,59 @@
     };
   }
 
+  const MODE_WORDS = { BUS: "Bus", COACH: "Coach", TRAM: "Tram", FERRY: "Ferry", SUBWAY: "Metro" };
+
+  // Name of a ride as people say it: "ICE 798", "RE30", "Bus 481", "RER D" (bare numbers get their
+  // mode, a lone letter the company in front).
+  function lineName(leg) {
+    const name = leg.displayName || leg.routeShortName || "";
+    if (!name) return MODE_WORDS[leg.mode] || "Train";
+    if (/^\d+$/.test(name) && MODE_WORDS[leg.mode]) return `${MODE_WORDS[leg.mode]} ${name}`;
+    const company = leg.agencyName || "";
+    return name.length <= 2 && company && company.length <= 8 ? `${company} ${name}` : name;
+  }
+
+  const SHORT_WALK_MIN = 5; // shorter walks at either end aren't worth a line
+  const minutesBetween = (fromIso, toIso) => (new Date(toIso) - new Date(fromIso)) / 60000;
+
+  /**
+   * A connection step by step, for the details list: a "stop" where you get on or off (with the
+   * time and the platform when known), a "ride", a "change" between two rides (with the minutes
+   * of it you walk and where to), and a "walk" at the start or the end.
+   */
+  function connectionSteps(legs) {
+    const isRide = (l) => !NOT_A_RIDE.has(l.mode);
+    const walkMin = (part) => part.filter((l) => !isRide(l)).reduce((sum, l) => sum + (l.duration || 0) / 60, 0);
+    const rides = (legs || []).map((l, i) => (isRide(l) ? i : -1)).filter((i) => i >= 0);
+    if (!rides.length) return [];
+
+    const stop = (place, time) => ({ type: "stop", time, tz: place.tz || null, name: place.name, track: place.track || null });
+    const steps = [];
+    const before = walkMin(legs.slice(0, rides[0]));
+    if (before >= SHORT_WALK_MIN) steps.push({ type: "walk", where: "start", durationMin: before });
+
+    rides.forEach((index, n) => {
+      const leg = legs[index];
+      if (n > 0) {
+        const last = legs[rides[n - 1]];
+        steps.push({
+          type: "change",
+          durationMin: minutesBetween(last.endTime, leg.startTime),
+          walkMin: walkMin(legs.slice(rides[n - 1] + 1, index)),
+          to: leg.from.name !== last.to.name ? leg.from.name : null,
+        });
+      }
+      const towards = leg.tripTo && leg.tripTo.name !== leg.to.name ? leg.tripTo.name : null;
+      steps.push(stop(leg.from, leg.startTime));
+      steps.push({ type: "ride", kind: vehicleKind(leg.mode), line: lineName(leg), towards, durationMin: leg.duration / 60 });
+      steps.push(stop(leg.to, leg.endTime));
+    });
+
+    const after = walkMin(legs.slice(rides[rides.length - 1] + 1));
+    if (after >= SHORT_WALK_MIN) steps.push({ type: "walk", where: "end", durationMin: after });
+    return steps;
+  }
+
   const OVERNIGHT_PENALTY_MIN = 180;
   const CHANGE_PENALTY_MIN = 30;
   const WAIT_PENALTY_MIN = 60;
@@ -181,6 +234,7 @@
     localDay,
     isOvernight,
     summarizeItinerary,
+    connectionSteps,
     pickConnections,
     fuelCost,
     googleMapsUrl,

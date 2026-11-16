@@ -115,7 +115,7 @@ there falls back to the depot.
 
 | Mode | What you get |
 | --- | --- |
-| Train & bus | Live connections from [Transitous](https://transitous.org/) in the 48 hours after your drop-off time. It shows three: the fastest first, then the two most comfortable alternatives (a night on the road, every change and every day of waiting count against a connection), each with its day, departure, arrival, trip time, changes and whether it is train, bus or both. Pick one to see it on the map. Without the local server or a contact it falls back to a rough estimate from the distance. |
+| Train & bus | Live connections from [Transitous](https://transitous.org/) in the 48 hours after your drop-off time. It shows three: the fastest first, then the two most comfortable alternatives (a night on the road, every change and every day of waiting count against a connection), each with its day, departure, arrival, trip time, changes and whether it is train, bus or both. "Connection details" slides out the chosen one station by station, with the trains and buses to take, the time for each change and the platforms where known. Pick one to see it on the map. Without the local server or a contact it falls back to a rough estimate from the distance. |
 | Car | The real road route from the free OSRM server: distance, driving time without traffic, and fuel cost from your consumption and fuel price |
 
 ### Live train and bus times (Transitous)

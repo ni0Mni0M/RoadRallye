@@ -65,6 +65,44 @@ test("summarizes an itinerary without line names", () => {
   assert.deepEqual(W.summarizeItinerary(coach).vehicles, ["bus"]);
 });
 
+test("lays a connection out step by step", () => {
+  const at = (name, extra = {}) => ({ name, tz: "Europe/Berlin", ...extra });
+  const legs = [
+    { mode: "WALK", duration: 480, from: at("START"), to: at("Marburg Süd") },
+    {
+      mode: "BUS", displayName: "481", duration: 600, startTime: "2026-11-23T11:10:00Z", endTime: "2026-11-23T11:20:00Z",
+      from: at("Marburg Süd"), to: at("Marburg Hbf"), tripTo: at("Marburg Hbf"),
+    },
+    { mode: "WALK", duration: 180, from: at("Marburg Hbf"), to: at("Marburg (Lahn)") },
+    {
+      mode: "REGIONAL_RAIL", displayName: "RE30", duration: 3600, startTime: "2026-11-23T11:31:00Z", endTime: "2026-11-23T12:31:00Z",
+      from: at("Marburg (Lahn)", { track: "1" }), to: at("Kassel-Wilhelmshöhe", { track: "3" }), tripTo: at("Kassel Hbf"),
+    },
+    {
+      mode: "HIGHSPEED_RAIL", displayName: "ICE 798", duration: 9000, startTime: "2026-11-23T12:45:00Z", endTime: "2026-11-23T15:15:00Z",
+      from: at("Kassel-Wilhelmshöhe", { track: "2" }), to: at("Berlin Hbf"), tripTo: at("Berlin Gesundbrunnen"),
+    },
+    { mode: "WALK", duration: 120, from: at("Berlin Hbf"), to: at("END") },
+  ];
+  const steps = W.connectionSteps(legs);
+  assert.deepEqual(steps.map((s) => s.type), [
+    "walk", "stop", "ride", "stop", "change", "stop", "ride", "stop", "change", "stop", "ride", "stop",
+  ]);
+  assert.deepEqual(steps[0], { type: "walk", where: "start", durationMin: 8 });
+  assert.deepEqual(steps[2], { type: "ride", kind: "bus", line: "Bus 481", towards: null, durationMin: 10 });
+  // The stop changes its name, so the change says where to walk.
+  assert.deepEqual(steps[4], { type: "change", durationMin: 11, walkMin: 3, to: "Marburg (Lahn)" });
+  assert.deepEqual(steps[5], { type: "stop", time: "2026-11-23T11:31:00Z", tz: "Europe/Berlin", name: "Marburg (Lahn)", track: "1" });
+  assert.deepEqual(steps[6], { type: "ride", kind: "train", line: "RE30", towards: "Kassel Hbf", durationMin: 60 });
+  assert.deepEqual(steps[8], { type: "change", durationMin: 14, walkMin: 0, to: null });
+  // The two-minute walk at the end is too short to mention.
+  assert.equal(steps[steps.length - 1].name, "Berlin Hbf");
+  assert.deepEqual(W.connectionSteps([legs[0]]), []);
+
+  const rer = { ...legs[3], displayName: "D", agencyName: "RER" };
+  assert.equal(W.connectionSteps([rer])[1].line, "RER D");
+});
+
 test("spots a night on the road by the local clock", () => {
   // Berlin is UTC+1 in November.
   assert.equal(W.isOvernight("2026-11-21T15:10:00Z", 13.5 * 60, "Europe/Berlin"), true); // 16:10 -> 05:40

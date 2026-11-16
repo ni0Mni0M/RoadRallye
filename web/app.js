@@ -1576,6 +1576,43 @@
     upstream: "The timetable service didn't answer.",
   };
 
+  let whDetailsOpen = false; // whether "Connection details" is slid out; kept while you switch connections and trips
+
+  // Exact minutes, unlike fmtDuration: a 7-minute change must not read as 5.
+  function fmtMinutes(min) {
+    const m = Math.round(min);
+    return m >= 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")} min` : `${m} min`;
+  }
+
+  // The chosen connection step by step: every station with its time, every ride and every change.
+  function stepsHtml(option, home) {
+    const steps = W.connectionSteps(option.legs);
+    const firstStop = steps.find((s) => s.type === "stop");
+    if (!firstStop) return "";
+    const firstDay = W.localDay(firstStop.time, firstStop.tz);
+    const items = steps.map((s) => {
+      if (s.type === "stop") {
+        const day = W.localDay(s.time, s.tz);
+        const extra = (s.track ? ` · platform ${esc(s.track)}` : "") + (day !== firstDay ? ` · ${fmtDay(day)}` : "");
+        return `<li class="wh-stop"><span class="wh-clock">${fmtClock(s.time, s.tz)}</span><span>${esc(s.name)}<span class="wh-extra">${extra}</span></span></li>`;
+      }
+      if (s.type === "ride") {
+        const towards = s.towards ? ` towards ${esc(s.towards)}` : "";
+        return `<li class="wh-leg ride"><span>${VEHICLES[s.kind].icon}${esc(s.line)}${towards} · ${fmtMinutes(s.durationMin)}</span></li>`;
+      }
+      if (s.type === "change") {
+        const walk = s.to ? `, walk to ${esc(s.to)}` : s.walkMin >= 2 ? `, ${fmtMinutes(s.walkMin)} of it on foot` : "";
+        return `<li class="wh-leg"><span>Change · ${fmtMinutes(s.durationMin)}${walk}</span></li>`;
+      }
+      const where = s.where === "start" ? "Walk to the station" : `Walk to ${esc(home.name)}`;
+      return `<li class="wh-leg"><span>${where} · ${fmtMinutes(s.durationMin)}</span></li>`;
+    });
+    return (
+      `<div class="cost-details"><ol class="wh-steps">${items.join("")}</ol>` +
+      '<p class="cost-note">Timetable times. Platforms can change on the day.</p></div>'
+    );
+  }
+
   function transitHtml(end, home, est, live, chosen, date) {
     const mapsLink = extLink(W.googleMapsUrl(end, home, "transit"), "Google Maps");
     const estimate = `About ${fmtRange(est.lowMin, est.highMin)} by train or bus`;
@@ -1617,6 +1654,9 @@
     return (
       `<p class="wh-main">Best connections until ${untilDay} ${esc(settings.dropoffTime)}</p>` +
       `<ol class="wh-options">${rows.join("")}</ol>` +
+      `<button type="button" class="cost-toggle" data-wh-details aria-expanded="${whDetailsOpen}" aria-controls="whSteps">` +
+      '<span>Connection details</span><span class="cost-chevron" aria-hidden="true"></span></button>' +
+      `<div class="cost-slide${whDetailsOpen ? " open" : ""}" id="whSteps"><div>${stepsHtml(live.options[chosen], home)}</div></div>` +
       `<p class="wh-detail">Searched ${SEARCH_DAYS * 24} hours after the ${esc(settings.dropoffTime)} drop-off. ` +
       "Pick one to see it on the map. Book the tickets with the train or bus company.</p>" +
       `<div class="wh-links">${mapsLink}</div>` +
@@ -1903,6 +1943,13 @@
     const modeButton = e.target.closest("[data-mode]");
     if (modeButton) {
       setHomeMode(modeButton.dataset.mode, Boolean(modeButton.dataset.retry));
+      return;
+    }
+    const whDetails = e.target.closest("[data-wh-details]");
+    if (whDetails) {
+      whDetailsOpen = !whDetailsOpen;
+      whDetails.setAttribute("aria-expanded", String(whDetailsOpen));
+      whDetails.nextElementSibling.classList.toggle("open", whDetailsOpen);
       return;
     }
     const option = e.target.closest("[data-itinerary]");
