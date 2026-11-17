@@ -23,8 +23,11 @@ tweaks can go straight to `main`.
 
 ## Project notes
 
-- Tests: `node --test tests/matching.test.js tests/wayhome.test.js tests/ranking.test.js` and
-  `python -m unittest discover -s tests`
+- Tests: `node --test tests/matching.test.js tests/wayhome.test.js tests/ranking.test.js tests/i18n.test.js`
+  and `python -m unittest discover -s tests`
+- Every text on the page comes from `web/lang/<code>.js` (English is `en.js`), looked up by key with
+  `tr()` in app.js or `data-i18n` in index.html. A new or changed text goes into all eight lists;
+  `tests/i18n.test.js` fails when a key, a `{placeholder}` or a plural form is missing.
 - Never commit `config.local.json` (the user's contact for Transitous), `web/data/` or `scraper/cache/`.
 - Commits use the repo-local identity `RoadRalley <roadralley@users.noreply.github.com>`.
 - Currency is always euros. The user sometimes uses a VPN, so websites (and the browser pane) may

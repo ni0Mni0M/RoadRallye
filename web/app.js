@@ -8,6 +8,9 @@
   const routeData = window.ROUTE_DATA || null; // road, countries and scenery per route (fetch_route_info.py)
   const climateData = window.CLIMATE_DATA || null; // typical weather per station (fetch_climate.py)
   const $ = (id) => document.getElementById(id);
+  // Every text comes from web/lang/*.js in the page's language (i18n.js); `t` is taken by the trips.
+  const tr = I18n.t;
+  const num = (x, opts) => I18n.numbers(opts).format(x);
 
   const STORAGE_KEY = "rally-finder-settings-v1";
   const PERSONAL_KEY = "rally-finder-personal-v1";
@@ -16,16 +19,14 @@
   const PROVIDERS = {
     roadsurfer: {
       name: "roadsurfer",
-      unit: "rallies",
-      note: "Rallies, usually from €129",
+      note: () => tr("provider.roadsurfer", { price: euros(129) }),
       book: (r) =>
         "https://booking.roadsurfer.com/rally/pick" +
         `?station=${r.from}&end_station=${r.to}&pickup_date=${r.pickup}&return_date=${r.return}&currency=EUR`,
     },
     imoova: {
       name: "Imoova",
-      unit: "relocations",
-      note: "Many rental companies, €1 a day plus a booking fee",
+      note: () => tr("provider.imoova", { price: euros(1) }),
       book: (r) => `https://www.imoova.com/en/relocations/${encodeURIComponent(r.ref)}`,
     },
   };
@@ -51,7 +52,7 @@
   const darkNow = () => (document.documentElement.dataset.theme || (systemDark.matches ? "dark" : "light")) === "dark";
 
   function labelThemeToggle() {
-    const label = `Switch to the ${darkNow() ? "light" : "dark"} theme`;
+    const label = tr(darkNow() ? "theme.toLight" : "theme.toDark");
     $("themeToggle").title = label;
     $("themeToggle").setAttribute("aria-label", label);
   }
@@ -69,22 +70,28 @@
   systemDark.addEventListener("change", labelThemeToggle);
   labelThemeToggle();
 
-  const dayFmt = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
-  const fmtDay = (iso) => dayFmt.format(new Date(iso + "T00:00:00Z"));
-  const fmtKm = (km) => `${Math.round(km).toLocaleString("en-GB")} km`;
-  const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  // Dates, numbers and amounts are written the way the page's language writes them ("Mon 5 Jan", "Mo., 5. Jan.").
+  const fmtDay = (iso) =>
+    I18n.dates({ weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(iso + "T00:00:00Z"));
+  const fmtKm = (km) => `${num(Math.round(km))} km`;
+  const cap = (s) => (s ? s[0].toLocaleUpperCase(I18n.locale()) + s.slice(1) : s);
   const esc = (s) =>
     String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   function fmtPrice(amount, currency) {
     try {
-      const opts = { style: "currency", currency, minimumFractionDigits: 0, maximumFractionDigits: 0 };
-      return new Intl.NumberFormat("en-GB", opts).format(amount);
+      return num(amount, { style: "currency", currency, minimumFractionDigits: 0, maximumFractionDigits: 0 });
     } catch (e) {
       return `${Math.round(amount)} ${currency}`; // unknown currency code
     }
   }
+  // "€719" in English, "719 €" in German; cents only where they matter (a fuel price).
+  const euros = (x) => fmtPrice(Math.round(x), "EUR");
+  const eurosCents = (x) => num(x, { style: "currency", currency: "EUR", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  // Month i (0-11) by name: "narrow" ("J"), "short" ("Jan") or "long" ("January").
+  const monthName = (i, month) => I18n.dates({ month, timeZone: "UTC" }).format(new Date(Date.UTC(2001, i, 15)));
 
   // Prices are shown in euros. Other currencies are converted at the ECB rate saved with the data
   // ("≈ €91"), with the listed price in the tooltip; without a rate the listed price is shown.
@@ -93,7 +100,7 @@
     const currency = r.currency || "EUR";
     const rate = currency !== "EUR" && data.rates && data.rates.per_eur[currency];
     if (!rate) return esc(fmtPrice(r.price, currency));
-    const listed = `${fmtPrice(r.price, currency)} at the ECB rate of ${data.rates.date}`;
+    const listed = tr("price.ecb", { price: fmtPrice(r.price, currency), date: data.rates.date });
     return `<span title="${esc(listed)}">≈ ${esc(fmtPrice(r.price / rate, "EUR"))}</span>`;
   }
 
@@ -111,14 +118,14 @@
     const m = Math.max(5, Math.round(min / 5) * 5);
     const h = Math.floor(m / 60);
     const r = m % 60;
-    return h ? (r ? `${h} h ${r} min` : `${h} h`) : `${r} min`;
+    return h ? (r ? tr("unit.hMin", { h, m: r }) : tr("unit.h", { h })) : tr("unit.min", { m: r });
   }
 
   // "4–6½ h", or "40–70 min" for short trips.
   function fmtRange(lowMin, highMin) {
-    if (highMin < 90) return `${Math.round(lowMin / 10) * 10}–${Math.round(highMin / 10) * 10} min`;
+    if (highMin < 90) return tr("unit.rangeMin", { from: Math.round(lowMin / 10) * 10, to: Math.round(highMin / 10) * 10 });
     const half = (h) => (Number.isInteger(h) ? `${h}` : `${Math.floor(h) || ""}½`);
-    return `${half(Math.floor(lowMin / 30) / 2)}–${half(Math.ceil(highMin / 30) / 2)} h`;
+    return tr("unit.rangeH", { from: half(Math.floor(lowMin / 30) / 2), to: half(Math.ceil(highMin / 30) / 2) });
   }
 
   // What rally i is to its trip, for the colours. The first is "out". In a round trip the last is "back"
@@ -187,13 +194,14 @@
       iconAnchor: [7, 7],
     });
   const SITE_ICONS = { park: siteIcon("park", "M7 1.5 12.8 12H1.2z"), unesco: siteIcon("unesco", "M7 1 13 7 7 13 1 7z") };
-  const SITE_KINDS = { park: "National park", unesco: "World Heritage site" };
+  const siteKind = (kind) => tr(kind === "park" ? "site.park" : "site.unesco");
+  const OPEN_METEO = '<a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo.com</a>';
+  const OSRM = '<a href="https://project-osrm.org/" target="_blank" rel="noopener">OSRM</a>';
 
   if (!data || !Array.isArray(data.rallies)) {
-    $("dataInfo").textContent = "No rally data yet.";
-    $("results").innerHTML =
-      '<li class="empty">Run <code>update-data.bat</code> (or <code>python scraper/fetch_rallies.py</code>) ' +
-      "to download the current rallies, then reload this page.</li>";
+    $("dataInfo").textContent = tr("data.none");
+    const help = tr("data.noneHelp", { script: "<code>update-data.bat</code>", command: "<code>python scraper/fetch_rallies.py</code>" });
+    $("results").innerHTML = `<li class="empty">${help}</li>`;
     $("playAll").hidden = true;
     document.documentElement.classList.remove("landing"); // nothing to choose from yet
     return;
@@ -337,27 +345,29 @@
 
   // What differs between the two kinds of trip.
   const oneWay = () => settings.tripType === "oneway";
-  const tripWord = () => (oneWay() ? "one-way trip" : "round trip");
+  // "5 round trips", "1 one-way trip": a number of trips of the current kind.
+  const tripsText = (n) => tr(oneWay() ? "trips.oneway" : "trips.round", { n });
   const maxLegs = () => (oneWay() ? ONE_WAY_LEG_CHOICES.indexOf(settings.legsOneWay) + 1 : settings.legs === "2" ? 2 : 3);
-  // A round trip only passes through the places it stops at; a one-way trip also ends at one.
-  const viaWord = () => (!oneWay() ? "via" : maxLegs() === 1 ? "to" : "to or via");
+  // A round trip only passes through the places it stops at; a one-way trip also ends at one. The texts
+  // that name such a place come in these three versions ("chip.via", "chip.to", "chip.toOrVia").
+  const viaKind = () => (!oneWay() ? "via" : maxLegs() === 1 ? "to" : "toOrVia");
 
   // ---------- Form ----------
 
   function fillHomeSelect() {
-    const regions = new Intl.DisplayNames(["en"], { type: "region" });
     const byCountry = new Map();
     for (const s of homeChoices) {
-      const country = s.country ? regions.of(s.country) : "Other";
+      const country = s.country ? countryName(s.country) : tr("filters.otherCountry");
       if (!byCountry.has(country)) byCountry.set(country, []);
       byCountry.get(country).push(s);
     }
+    const lang = I18n.locale();
     $("home").innerHTML = [...byCountry.keys()]
-      .sort((a, b) => a.localeCompare(b))
+      .sort((a, b) => a.localeCompare(b, lang))
       .map((country) => {
         const options = byCountry
           .get(country)
-          .sort((a, b) => a.name.localeCompare(b.name))
+          .sort((a, b) => a.name.localeCompare(b.name, lang))
           .map((s) => `<option value="${s.id}">${esc(s.name)}</option>`)
           .join("");
         return `<optgroup label="${esc(country)}">${options}</optgroup>`;
@@ -370,7 +380,7 @@
     $("providerSet").hidden = providersInData.length < 2;
     $("providers").innerHTML = providersInData
       .map((p) => {
-        const note = PROVIDERS[p] ? `<small>${esc(PROVIDERS[p].note)}</small>` : "";
+        const note = PROVIDERS[p] ? `<small>${esc(PROVIDERS[p].note())}</small>` : "";
         return `<label class="check"><input type="checkbox" value="${esc(p)}"><span>${esc(providerName(p))}${note}</span></label>`;
       })
       .join("");
@@ -416,10 +426,10 @@
 
   function updateOutputs() {
     const v = (id) => Number($(id).value);
-    $("startRadiusOut").textContent = v("startRadius") === 0 ? "home station only" : fmtKm(v("startRadius"));
+    $("startRadiusOut").textContent = v("startRadius") === 0 ? tr("filters.homeOnly") : fmtKm(v("startRadius"));
     $("returnRadiusOut").textContent = fmtKm(v("returnRadius"));
-    $("maxWaitOut").textContent = v("maxWait") === 0 ? "same day only" : `up to ${plural(v("maxWait"), "day")}`;
-    $("hopRadiusOut").textContent = v("hopRadius") === 0 ? "off" : `up to ${fmtKm(v("hopRadius"))}`;
+    $("maxWaitOut").textContent = v("maxWait") === 0 ? tr("filters.sameDayOnly") : tr("filters.upToDays", { n: v("maxWait") });
+    $("hopRadiusOut").textContent = v("hopRadius") === 0 ? tr("filters.off") : tr("filters.upTo", { km: fmtKm(v("hopRadius")) });
     $("wayHomeOptions").hidden = !$("wayHome").checked;
 
     // One-way or round trip: which filters apply, and what they are called. Read from the form,
@@ -427,16 +437,14 @@
     const form = $("filters").elements;
     const oneWayNow = form.tripType.value === "oneway";
     const chains = !oneWayNow || form.legsOneWay.value !== "1"; // a single rally has no legs to wait or hop between
-    $("tripTypeHint").textContent = oneWayNow
-      ? "Drive away from home with one rally, or chain up to three. You get home another way."
-      : "Out with one rally and back with another, ending near home.";
+    $("tripTypeHint").textContent = tr(oneWayNow ? "trip.hint.oneway" : "trip.hint.round");
     $("returnField").hidden = oneWayNow;
-    $("latestLabel").textContent = oneWayNow ? "Latest drop-off" : "Back by";
+    $("latestLabel").textContent = tr(oneWayNow ? "filters.latestDropoff" : "filters.backBy");
     $("legsOneWayField").hidden = !oneWayNow;
     $("legsRoundField").hidden = oneWayNow;
     $("maxWaitField").hidden = !chains;
     $("hopField").hidden = !chains;
-    $("sortDistance").textContent = oneWayNow ? "Ends farthest from home" : "Ends closest to home";
+    $("sortDistance").textContent = tr(oneWayNow ? "sort.farthest" : "sort.closest");
   }
 
   let debounce;
@@ -527,10 +535,8 @@
   }
 
   function dateError() {
-    if (!settings.earliest || !settings.latest) return "Pick both dates.";
-    if (settings.latest < settings.earliest) {
-      return `The ${oneWay() ? "latest drop-off" : "back-by date"} is before the earliest pickup.`;
-    }
+    if (!settings.earliest || !settings.latest) return tr("date.pickBoth");
+    if (settings.latest < settings.earliest) return tr(oneWay() ? "date.error.oneway" : "date.error.round");
     return "";
   }
 
@@ -563,8 +569,8 @@
   // The legend only names what the chosen kind of trip can draw.
   function updateLegend() {
     const chains = maxLegs() > (oneWay() ? 1 : 2); // more rallies than the plainest trip of this kind
-    $("legendOutText").textContent = oneWay() ? "First rally" : "Outbound rally";
-    $("legendMidText").textContent = oneWay() ? "Onward rally" : "Middle rally";
+    $("legendOutText").textContent = tr(oneWay() ? "legend.first" : "legend.outbound");
+    $("legendMidText").textContent = tr(oneWay() ? "legend.onward" : "legend.middle");
     $("legendMid").hidden = !chains;
     $("legendBack").hidden = oneWay();
     $("legendHop").hidden = oneWay() && !chains;
@@ -640,11 +646,12 @@
     const p = providerOf(r);
     const source =
       esc(providerName(p)) +
-      (r.supplier ? ` (${esc(r.supplier)} van)` : "") +
+      (r.supplier ? ` (${esc(tr("leg.supplier", { supplier: r.supplier }))})` : "") +
       (typeof r.price === "number" ? ` · ${priceHtml(r)}` : "");
+    const bookLabel = tr("leg.bookLabel", { from: a.name, to: b.name, provider: providerName(p) });
     const book = PROVIDERS[p]
       ? `<a class="book" href="${esc(PROVIDERS[p].book(r))}" target="_blank" rel="noopener" ` +
-        `aria-label="Book ${esc(a.name)} to ${esc(b.name)} on ${esc(providerName(p))}">Book ↗</a>`
+        `aria-label="${esc(bookLabel)}">${esc(tr("leg.book"))} ↗</a>`
       : "";
     return (
       `<div class="leg ${kind}">` +
@@ -652,7 +659,7 @@
       '<div class="leg-text">' +
       `<span class="leg-dates">${fmtDay(r.pickup)} → ${fmtDay(r.return)}</span>` +
       '<span class="leg-stations">' +
-      `<span class="leg-route">${esc(a.name)} → ${esc(b.name)} · ${plural(M.daysBetween(r.pickup, r.return), "day")}</span>` +
+      `<span class="leg-route">${esc(a.name)} → ${esc(b.name)} · ${tr("count.days", { n: M.daysBetween(r.pickup, r.return) })}</span>` +
       `<span class="leg-source">${source}</span>` +
       "</span>" +
       "</div>" +
@@ -667,12 +674,12 @@
     const depart = stations.get(t.legs[i + 1].from);
     const wait = t.waits[i];
     if (arrive.id !== depart.id) {
-      const when = wait ? `, ${plural(wait, "day")} later` : ", same day";
       const acrossTown = t.hops[i] <= M.SAME_PLACE_KM && providerById.get(arrive.id) !== providerById.get(depart.id);
-      const how = acrossTown ? "Across town" : "Train";
-      return `<p class="between">${how} ${esc(arrive.name)} → ${esc(depart.name)} (${fmtKm(t.hops[i])})${when}</p>`;
+      const key = `between.${acrossTown ? "town" : "train"}${wait ? "Later" : "SameDay"}`;
+      const text = tr(key, { from: esc(arrive.name), to: esc(depart.name), km: fmtKm(t.hops[i]), n: wait });
+      return `<p class="between">${text}</p>`;
     }
-    return wait ? `<p class="between">${plural(wait, "day")} in ${esc(arrive.name)}</p>` : "";
+    return wait ? `<p class="between">${tr("between.wait", { n: wait, place: esc(arrive.name) })}</p>` : "";
   }
 
   function tripHtml(t) {
@@ -690,13 +697,13 @@
     });
     // "15 days · 3 rallies · 1 day waiting · ends 368 km from home". The rallies are only counted when
     // there are more than the plainest trip of this kind has, and a single rally has nothing to wait for.
-    const summary = [plural(t.totalDays, "day")];
-    if (n > (t.type === "oneway" ? 1 : 2)) summary.push(`${n} rallies`);
-    if (n > 1) summary.push(t.waitDays === 0 ? "no waiting" : `${plural(t.waitDays, "day")} waiting`);
-    summary.push(`ends ${fmtKm(t.endKm)} from home`);
+    const summary = [tr("count.days", { n: t.totalDays })];
+    if (n > (t.type === "oneway" ? 1 : 2)) summary.push(tr("count.rallies", { n }));
+    if (n > 1) summary.push(t.waitDays === 0 ? tr("trip.noWaiting") : tr("trip.waiting", { n: t.waitDays }));
+    summary.push(tr("trip.endsFrom", { km: fmtKm(t.endKm) }));
     const f = facts.get(t.id);
     const paceLine = f
-      ? `<p class="facts">${Math.round(f.kmPerDay)} km a day${f.countries.length > 1 ? ` · ${f.countries.join(" → ")}` : ""}</p>`
+      ? `<p class="facts">${tr("trip.kmPerDay", { n: Math.round(f.kmPerDay) })}${f.countries.length > 1 ? ` · ${f.countries.join(" → ")}` : ""}</p>`
       : "";
 
     return (
@@ -711,8 +718,6 @@
     );
   }
 
-  const euros = (x) => `€${Math.round(x).toLocaleString("en-GB")}`;
-
   // The price of a trip: "≈ €719 · rent €219 + fuel €500", then a button ("You save ≈ €691") that
   // slides out how both the rally price and the normal rental it is compared with add up.
   // The normal rental is a guess from two settings, so everything derived from it is marked "≈".
@@ -720,8 +725,8 @@
     const p = f.costParts;
     const open = openCosts.has(t.id);
     const row = (label, amount, cls = "") => `<div class="cost-row${cls}"><span>${label}</span><span>${amount}</span></div>`;
-    const times = (n, amount) => (n > 1 ? `${n} × ${euros(amount)}` : "");
-    const dist = `${fmtKm(f.roadKm)}${f.measured ? "" : " (estimated)"}`;
+    const times = (n, amount) => `${n} × ${euros(amount)}`;
+    const dist = f.measured ? fmtKm(f.roadKm) : tr("cost.estimated", { km: fmtKm(f.roadKm) });
 
     // Insurance is extra: a ticked box adds it to every trip's total (and to the normal rental, which
     // would need the same cover). Rallies with a listed price have none to add.
@@ -729,47 +734,56 @@
     const insurance = p.feeLegs && settings.insurance > 0 ? p.feeDays * settings.insurance : 0;
 
     const rally = [];
-    if (p.feeLegs) rally.push(row(`Rally fee${p.feeLegs > 1 ? `, ${times(p.feeLegs, settings.rallyFee)}` : ""}`, euros(p.feeLegs * settings.rallyFee)));
-    if (p.listedLegs) rally.push(row(p.listedLegs > 1 ? `Listed prices, ${p.listedLegs} rallies` : "Listed price", euros(p.listedRent)));
-    rally.push(row(`Fuel, ${dist}`, euros(f.fuel)));
+    if (p.feeLegs) {
+      const fee = p.feeLegs > 1 ? tr("cost.rallyFeeTimes", { times: times(p.feeLegs, settings.rallyFee) }) : tr("cost.rallyFee");
+      rally.push(row(fee, euros(p.feeLegs * settings.rallyFee)));
+    }
+    if (p.listedLegs) {
+      rally.push(row(p.listedLegs > 1 ? tr("cost.listedPrices", { n: p.listedLegs }) : tr("cost.listedPrice"), euros(p.listedRent)));
+    }
+    rally.push(row(tr("cost.fuel", { distance: dist }), euros(f.fuel)));
     if (insurance) {
+      const label = tr("cost.insurance", { days: tr("count.days", { n: p.feeDays }), price: euros(settings.insurance) });
       rally.push(
-        `<label class="cost-row cost-opt${insured ? " on" : ""}" title="Adds the insurance to the total of every trip">` +
-        `<span><input type="checkbox" data-insurance${insured ? " checked" : ""}>` +
-        `Insurance (optional), ${plural(p.feeDays, "day")} × ${euros(settings.insurance)}</span>` +
+        `<label class="cost-row cost-opt${insured ? " on" : ""}" title="${esc(tr("cost.insuranceTitle"))}">` +
+        `<span><input type="checkbox" data-insurance${insured ? " checked" : ""}>${label}</span>` +
         `<span>${insured ? "" : "+ "}${euros(insurance)}</span></label>`
       );
     }
-    rally.push(row("Total", `≈ ${euros(f.cost)}`, " cost-sum"));
+    rally.push(row(tr("cost.total"), `≈ ${euros(f.cost)}`, " cost-sum"));
 
     const n = t.legs.length;
     const normalCost = f.normalRent + f.fuel;
+    const rent = tr("cost.rent", { days: tr("count.days", { n: f.rallyDays }), price: euros(settings.normalDayPrice) });
+    const oneWayFee = n > 1 ? tr("cost.oneWayFeeTimes", { times: times(n, settings.oneWayFee) }) : tr("cost.oneWayFee");
     const normal = [
-      row(`Rent, ${plural(f.rallyDays, "day")} × ${euros(settings.normalDayPrice)}`, euros(f.rallyDays * settings.normalDayPrice)),
-      row(`One-way fee${n > 1 ? `, ${times(n, settings.oneWayFee)}` : ""}`, euros(n * settings.oneWayFee)),
-      row("Fuel, same route", euros(f.fuel)),
+      row(rent, euros(f.rallyDays * settings.normalDayPrice)),
+      row(oneWayFee, euros(n * settings.oneWayFee)),
+      row(tr("cost.fuelSame"), euros(f.fuel)),
     ];
-    if (insurance && insured) normal.push(row("Insurance, same cover", euros(insurance)));
-    normal.push(row("Total", `≈ ${euros(normalCost)}`, " cost-sum"));
+    if (insurance && insured) normal.push(row(tr("cost.insuranceSame"), euros(insurance)));
+    normal.push(row(tr("cost.total"), `≈ ${euros(normalCost)}`, " cost-sum"));
     const saves = f.saving > 0;
+    const share = num(f.saving / normalCost, { style: "percent", maximumFractionDigits: 0 });
     const outcome = saves
-      ? row("You save", `≈ ${euros(f.saving)} (${Math.round((f.saving / normalCost) * 100)}%)`, " cost-save")
-      : row("The rally costs more", `≈ ${euros(-f.saving)}`);
+      ? row(tr("cost.youSave"), `≈ ${euros(f.saving)} (${share})`, " cost-save")
+      : row(tr("cost.costsMore"), `≈ ${euros(-f.saving)}`);
     const id = `costs-${esc(t.id)}`;
+    const note = tr(n > 1 ? "cost.noteEach" : "cost.note", { day: euros(settings.normalDayPrice), fee: euros(settings.oneWayFee) });
 
     return (
-      `<p class="facts" title="Rental (rally fee${insured ? " and insurance" : ""}, or the listed price) and diesel for ${dist}; no tolls">` +
-      `<strong class="cost-total">≈ ${euros(f.cost)}</strong> · rent ${euros(f.rent)} + fuel ${euros(f.fuel)}</p>` +
+      `<p class="facts" title="${esc(tr(insured ? "cost.summaryTitleInsured" : "cost.summaryTitle", { distance: dist }))}">` +
+      `<strong class="cost-total">≈ ${euros(f.cost)}</strong> · ${tr("cost.split", { rent: euros(f.rent), fuel: euros(f.fuel) })}</p>` +
       `<button type="button" class="cost-toggle${saves ? " saves" : ""}" data-costs aria-expanded="${open}" aria-controls="${id}">` +
-      `<span>${saves ? `You save ≈ ${euros(f.saving)}` : "Cost details"}</span><span class="cost-chevron" aria-hidden="true"></span></button>` +
+      `<span>${saves ? tr("cost.saveButton", { amount: euros(f.saving) }) : tr("cost.details")}</span>` +
+      '<span class="cost-chevron" aria-hidden="true"></span></button>' +
       `<div class="cost-slide${open ? " open" : ""}" id="${id}"><div><div class="cost-details">` +
-      '<div class="cost-head">With the rally</div>' +
+      `<div class="cost-head">${tr("cost.withRally")}</div>` +
       rally.join("") +
-      '<div class="cost-head">Normal rental (estimate)</div>' +
+      `<div class="cost-head">${tr("cost.normalHead")}</div>` +
       normal.join("") +
       outcome +
-      `<p class="cost-note">Estimated from your settings: ${euros(settings.normalDayPrice)} a day plus a ` +
-      `${euros(settings.oneWayFee)} one-way fee${n > 1 ? " for each rally" : ""}.</p>` +
+      `<p class="cost-note">${note}</p>` +
       "</div></div></div>"
     );
   }
@@ -788,47 +802,41 @@
     const n = trips.length;
     // Next to the total: how many trips chain more rallies than the plainest trip of this kind.
     const longer = trips.filter((t) => t.legs.length > (oneWay() ? 1 : 2)).length;
-    const longerText =
-      oneWay() && maxLegs() > 1 ? ` · ${longer} with ${maxLegs() === 2 ? "2" : "2 or 3"} rallies`
-        : !oneWay() && settings.legs === "2-3" ? ` · ${longer} with 3 rallies`
-          : "";
-    $("resultCount").textContent = n ? plural(n, tripWord()) + longerText : `No ${tripWord()}s`;
+    const longerKey =
+      oneWay() && maxLegs() > 1 ? (maxLegs() === 2 ? "trips.withTwo" : "trips.withTwoOrThree")
+        : !oneWay() && settings.legs === "2-3" ? "trips.withThree"
+          : null;
+    const longerText = longerKey ? ` · ${tr(longerKey, { n: longer })}` : "";
+    $("resultCount").textContent = n ? tripsText(n) + longerText : tr(oneWay() ? "trips.none.oneway" : "trips.none.round");
     const chip = (label) =>
-      `<span class="chip">${label}<button type="button" id="clearVia" aria-label="Show all trips">×</button></span>`;
-    const viaText = viaWord();
+      `<span class="chip">${label}<button type="button" id="clearVia" aria-label="${esc(tr("trips.showAll"))}">×</button></span>`;
     $("viaChip").innerHTML =
-      via !== null ? chip(`${viaText[0].toUpperCase()}${viaText.slice(1)} ${esc(stations.get(via).name)}`)
-        : startVia !== null ? chip(`Starting at ${esc(stations.get(startVia).name)}`)
+      via !== null ? chip(tr(`chip.${viaKind()}`, { place: esc(stations.get(via).name) }))
+        : startVia !== null ? chip(tr("chip.startingAt", { place: esc(stations.get(startVia).name) }))
           : "";
 
     if (!n) {
-      const empty = oneWay()
-        ? "No one-way trips match yet. Try a later drop-off date, a bigger start radius, or another home station."
-        : settings.legs === "3"
-          ? "No trips with 3 rallies match. They need two far-away rallies that line up, " +
-            "so try a bigger start radius, more days between legs, or a train hop."
-          : "Nothing matches yet. Try a later back-by date, a bigger return radius, " +
-            "more days between legs, or a train hop.";
+      const empty = tr(oneWay() ? "empty.oneway" : settings.legs === "3" ? "empty.round3" : "empty.round");
       $("results").innerHTML = $("dateError").textContent ? "" : `<li class="empty">${empty}</li>`;
       return;
     }
     const rest = n - shown;
+    const more = tr("trips.showMore", { n: Math.min(PAGE_SIZE, rest) });
     $("results").innerHTML =
       trips.slice(0, shown).map(tripHtml).join("") +
-      (rest > 0 ? `<li class="more"><button type="button" id="showMore">Show ${Math.min(PAGE_SIZE, rest)} more</button></li>` : "");
+      (rest > 0 ? `<li class="more"><button type="button" id="showMore">${more}</button></li>` : "");
   }
 
   // ---------- Ranking ----------
 
-  const regionNames = new Intl.DisplayNames(["en"], { type: "region" });
-  const countryName = (code) => {
+  // "Spain", "Spanien", "Espagne": country names come from the browser, in the page's language.
+  function countryName(code) {
     try {
-      return regionNames.of(code);
+      return I18n.regions().of(code);
     } catch (e) {
       return code;
     }
-  };
-  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  }
   const freshSince = R.freshSince(data.fetched_at, data.tracking_since);
   const rankKey = () => (settings.rankBy === "favourites" ? "trips" : settings.rankBy);
 
@@ -836,11 +844,11 @@
   function rankUnavailable(key) {
     const m = R.METRICS[key];
     if (!m) return "";
-    if (m.types && !m.types.includes(settings.tripType)) return "round trips only";
-    if (!m.modes.includes(settings.rankMode)) return "only for where to go";
-    if (m.needs === "routes" && !routeData) return "needs route data";
-    if (m.needs === "climate" && !climateData) return "needs weather data";
-    if (m.needs === "tracking" && !freshSince) return "from the next data update";
+    if (m.types && !m.types.includes(settings.tripType)) return tr("rank.why.roundOnly");
+    if (!m.modes.includes(settings.rankMode)) return tr("rank.why.destinationsOnly");
+    if (m.needs === "routes" && !routeData) return tr("rank.why.routes");
+    if (m.needs === "climate" && !climateData) return tr("rank.why.weather");
+    if (m.needs === "tracking" && !freshSince) return tr("rank.why.tracking");
     return "";
   }
 
@@ -858,16 +866,17 @@
       if (!groups.has(m.group)) groups.set(m.group, []);
       groups.get(m.group).push(key);
     }
+    const group = (label, keys) => `<optgroup label="${esc(label)}">${keys.map((k) => option(k, metricLabel(k))).join("")}</optgroup>`;
     $("rankBy").innerHTML =
-      [...groups].map(([g, keys]) => `<optgroup label="${esc(g)}">${keys.map((k) => option(k, R.METRICS[k].label)).join("")}</optgroup>`).join("") +
-      `<optgroup label="Personal">${option("favourites", "Favourites first")}</optgroup>` +
-      `<optgroup label="Several at once">${option("combined", "Combined score")}</optgroup>`;
+      [...groups].map(([g, keys]) => group(tr(`rankGroup.${g}`), keys)).join("") +
+      group(tr("rankGroup.Personal"), ["favourites"]) +
+      group(tr("rankGroup.Several"), ["combined"]);
     $("rankBy").value = settings.rankBy;
 
     $("combineChips").hidden = settings.rankBy !== "combined";
-    $("combineChips").innerHTML = Object.entries(R.METRICS)
-      .filter(([k]) => !rankUnavailable(k))
-      .map(([k, m]) => `<label class="chip-check"><input type="checkbox" value="${k}"${settings.combine.includes(k) ? " checked" : ""}><span>${esc(m.label)}</span></label>`)
+    $("combineChips").innerHTML = Object.keys(R.METRICS)
+      .filter((k) => !rankUnavailable(k))
+      .map((k) => `<label class="chip-check"><input type="checkbox" value="${k}"${settings.combine.includes(k) ? " checked" : ""}><span>${esc(metricLabel(k))}</span></label>`)
       .join("");
     $("onlyFavs").checked = settings.onlyFavs;
     $("hideVisited").checked = settings.hideVisited;
@@ -895,25 +904,27 @@
   const visibleRankRows = () =>
     rankRows.filter((r) => (!settings.onlyFavs || personal.fav.has(r.id)) && (!settings.hideVisited || !personal.visited.has(r.id)));
 
+  // The ranking's names live in ranking.js in English; the page shows them in its language.
+  const metricLabel = (key) => tr(`metric.${key}`);
+
   function fmtMetric(key, v) {
     if (v === null || v === undefined) return "–";
-    const money = (x) => `€${Math.round(x).toLocaleString("en-GB")}`;
     switch (key) {
-      case "dates": return plural(v, "date");
-      case "backups": return `${v.toLocaleString("en-GB")} per departure`;
-      case "trips": return plural(v, "trip");
-      case "stay": return v ? plural(v, "day") : "same day";
-      case "pace": return `${Math.round(v)} km/day`;
+      case "dates": return tr("count.dates", { n: v });
+      case "backups": return tr("value.backups", { n: v });
+      case "trips": return tr("count.trips", { n: v });
+      case "stay": return v ? tr("count.days", { n: v }) : tr("value.sameDay");
+      case "pace": return tr("value.pace", { n: Math.round(v) });
       case "distance": return fmtKm(v);
-      case "countries": return v === 1 ? "1 country" : `${v} countries`;
-      case "warmth": return `${Math.round(v)} °C`;
-      case "sun": return `${v.toFixed(1)} h sun`;
-      case "dry": return `${Math.round(v)} rainy days`;
-      case "scenic": return `${Math.round(v)} points`;
-      case "cost": return money(v);
-      case "costPerDay": return `${money(v)}/day`;
-      case "fresh": return `${v} new`;
-      case "soonest": return v === 0 ? "today" : v === 1 ? "tomorrow" : `in ${v} days`;
+      case "countries": return tr("count.countries", { n: v });
+      case "warmth": return `${num(Math.round(v))} °C`;
+      case "sun": return tr("value.sun", { n: num(v, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) });
+      case "dry": return tr("count.rainyDays", { n: Math.round(v) });
+      case "scenic": return tr("count.points", { n: Math.round(v) });
+      case "cost": return euros(v);
+      case "costPerDay": return tr("value.perDay", { price: euros(v) });
+      case "fresh": return tr("value.fresh", { n: v });
+      case "soonest": return v === 0 ? tr("value.today") : v === 1 ? tr("value.tomorrow") : tr("value.inDays", { n: v });
       case "combined": return `${Math.round(v * 100)}/100`;
       default: return String(v);
     }
@@ -923,24 +934,32 @@
     const months = climateData && climateData.stations[String(row.id)];
     if (!months || row.arrivalMonth === null) return "";
     const w = months[row.arrivalMonth];
-    return `Arriving in ${MONTHS[row.arrivalMonth]}: ${Math.round(w.t)} °C highs, ${w.sun} h of sun a day, ` +
-      `${Math.round(w.rain)} rainy days (${esc(climateData.period)} average)`;
+    return tr("weather.arriving", {
+      month: monthName(row.arrivalMonth, "long"),
+      temp: Math.round(w.t),
+      sun: w.sun,
+      rain: tr("count.rainyDays", { n: Math.round(w.rain) }),
+      period: esc(climateData.period),
+    });
   }
+
+  // "A, B, C, D, +14 more" as plain text.
+  const someNames = (names, max = 4) =>
+    names.slice(0, max).join(", ") + (names.length > max ? `, ${tr("list.more", { n: names.length - max })}` : "");
 
   function scenicText(t) {
     const f = facts.get(t.id);
     const parts = [
-      f.parks.length && plural(f.parks.length, "national park"),
-      f.unesco.length && `${f.unesco.length} UNESCO site${f.unesco.length === 1 ? "" : "s"}`,
-      f.coastKm && `${fmtKm(f.coastKm)} by the sea`,
-      f.mountainKm && `${fmtKm(f.mountainKm)} above 1,000 m`,
+      f.parks.length && tr("count.parks", { n: f.parks.length }),
+      f.unesco.length && tr("count.unesco", { n: f.unesco.length }),
+      f.coastKm && tr("scenic.coast", { km: fmtKm(f.coastKm) }),
+      f.mountainKm && tr("scenic.mountains", { km: fmtKm(f.mountainKm) }),
     ].filter(Boolean);
     const names = [...f.parks, ...f.unesco];
+    const route = esc(routeText(t));
     return (
-      `${parts.length ? parts.join(" · ") : "No parks, World Heritage sites, coast or mountains"} on ${esc(routeText(t))}` +
-      (names.length
-        ? `<span class="rank-names">${esc(names.slice(0, 4).join(", "))}${names.length > 4 ? `, +${names.length - 4} more` : ""}</span>`
-        : "")
+      (parts.length ? tr("scenic.on", { parts: parts.join(" · "), route }) : tr("scenic.none", { route })) +
+      (names.length ? `<span class="rank-names">${esc(someNames(names))}</span>` : "")
     );
   }
 
@@ -959,30 +978,28 @@
       case "cost":
       case "costPerDay": {
         const t = row.best.cost;
-        return `From €${Math.round(f(t).cost).toLocaleString("en-GB")} for ${esc(routeText(t))}, ${plural(t.totalDays, "day")}`;
+        return tr("detail.cost", { price: euros(f(t).cost), route: esc(routeText(t)), days: tr("count.days", { n: t.totalDays }) });
       }
       case "pace":
-        return `${Math.round(f(row.best.pace).kmPerDay)} km a day on ${esc(routeText(row.best.pace))}`;
+        return tr("detail.pace", { n: Math.round(f(row.best.pace).kmPerDay), route: esc(routeText(row.best.pace)) });
       case "stay":
-        return row.values.stay ? `Up to ${plural(row.values.stay, "day")} there between rallies` : "You switch vans the same day";
+        return row.values.stay ? tr("detail.stay", { days: tr("count.days", { n: row.values.stay }) }) : tr("detail.staySameDay");
       case "fresh":
-        return `${row.values.fresh} of ${plural(row.trips, "trip")} use rallies first seen since ${fmtDay(freshSince)}`;
+        return tr("detail.fresh", { fresh: row.values.fresh, trips: tr("count.trips", { n: row.trips }), date: fmtDay(freshSince) });
       case "soonest":
-        return `First departure ${fmtDay(row.dateList[0])}`;
+        return tr("detail.soonest", { date: fmtDay(row.dateList[0]) });
       case "distance":
-        return `${fmtKm(row.values.distance)} from ${esc(stations.get(settings.home).name)} as the crow flies`;
+        return tr("detail.distance", { km: fmtKm(row.values.distance), home: esc(stations.get(settings.home).name) });
       case "combined":
         return (
           '<span class="rank-parts">' +
           Object.entries(row.parts)
-            .map(([k, p]) => `<span class="part"><span>${esc(R.METRICS[k].label)}</span><span class="part-bar"><i style="width:${Math.round(p * 100)}%"></i></span></span>`)
+            .map(([k, p]) => `<span class="part"><span>${esc(metricLabel(k))}</span><span class="part-bar"><i style="width:${Math.round(p * 100)}%"></i></span></span>`)
             .join("") +
           "</span>"
         );
-      default: {
-        const shown3 = row.dateList.slice(0, 3).map(fmtDay).join(", ");
-        return `Leave on ${shown3}${row.dateList.length > 3 ? `, +${row.dateList.length - 3} more` : ""}`;
-      }
+      default:
+        return tr("detail.dates", { dates: someNames(row.dateList.map(fmtDay), 3) });
     }
   }
 
@@ -999,21 +1016,25 @@
     const key = rankKey();
     const fav = personal.fav.has(row.id);
     const been = personal.visited.has(row.id);
-    const away = settings.rankMode === "destinations" ? ` · ${fmtKm(M.haversineKm(stations.get(settings.home), stations.get(row.id)))} away` : "";
+    const away = settings.rankMode === "destinations"
+      ? ` · ${tr("rank.away", { km: fmtKm(M.haversineKm(stations.get(settings.home), stations.get(row.id))) })}`
+      : "";
+    const favLabel = esc(tr("rank.favouriteOf", { name: row.name }));
+    const beenLabel = esc(tr("rank.beenOf", { name: row.name }));
     return (
       `<li class="rank-row" data-station="${esc(row.id)}" tabindex="0">` +
       `<span class="rank-no">${row.rank === null ? "–" : position}</span>` +
       '<div class="rank-main">' +
       `<h3>${esc(row.name)} <span class="rank-country">${esc(countryName(row.country))}</span></h3>` +
-      `<p class="rank-sub">${plural(row.values.dates, "departure date")} · ${plural(row.trips, tripWord())}${away}</p>` +
+      `<p class="rank-sub">${tr("count.departureDates", { n: row.values.dates })} · ${tripsText(row.trips)}${away}</p>` +
       `<p class="rank-detail">${detailHtml(row, key)}</p>` +
       dateStripHtml(row) +
       "</div>" +
       '<div class="rank-side">' +
       `<span class="rank-value">${fmtMetric(key, row.values[key])}</span>` +
       '<span class="rank-actions">' +
-      `<button type="button" class="icon-btn" data-fav aria-pressed="${fav}" title="Favourite" aria-label="Favourite: ${esc(row.name)}">${fav ? "★" : "☆"}</button>` +
-      `<button type="button" class="icon-btn" data-visited aria-pressed="${been}" title="Been there" aria-label="Been there: ${esc(row.name)}">✓</button>` +
+      `<button type="button" class="icon-btn" data-fav aria-pressed="${fav}" title="${esc(tr("rank.favourite"))}" aria-label="${favLabel}">${fav ? "★" : "☆"}</button>` +
+      `<button type="button" class="icon-btn" data-visited aria-pressed="${been}" title="${esc(tr("rank.been"))}" aria-label="${beenLabel}">✓</button>` +
       "</span></div></li>"
     );
   }
@@ -1026,36 +1047,27 @@
     if (settings.view !== "destinations") return;
 
     const rows = visibleRankRows();
-    const what =
-      settings.rankMode === "starts" ? `stations your ${tripWord()}s start from`
-        : oneWay() ? "places your one-way trips take you to"
-          : "places your round trips stop at";
-    $("rankCount").textContent = rows.length ? `${plural(rows.length, "station")}: ${what}` : "";
+    const what = tr(`rank.what.${settings.rankMode}.${settings.tripType}`);
+    $("rankCount").textContent = rows.length ? tr("rank.count", { stations: tr("count.stations", { n: rows.length }), what }) : "";
 
     const notes = [];
-    if (!routeData) notes.push("Road distances and scenery are missing, so costs and pace are estimates. Run update-data.bat.");
-    if (!climateData) notes.push("Weather data is missing. Run update-data.bat.");
-    if (!freshSince && data.tracking_since) notes.push(`New rallies are tracked since ${fmtDay(data.tracking_since)}; they show from the next update.`);
-    if (rows.length && rows.every((r) => r.rank === null)) {
-      notes.push("None of these stations has this figure yet, probably because route data is incomplete. Run update-data.bat.");
-    }
+    if (!routeData) notes.push(tr("rank.note.routes"));
+    if (!climateData) notes.push(tr("rank.note.weather"));
+    if (!freshSince && data.tracking_since) notes.push(tr("rank.note.tracking", { date: fmtDay(data.tracking_since) }));
+    if (rows.length && rows.every((r) => r.rank === null)) notes.push(tr("rank.note.incomplete"));
     $("rankNote").textContent = notes.join(" ");
 
+    const empty = allTrips.length ? tr("rank.empty.marks") : tr(oneWay() ? "rank.empty.oneway" : "rank.empty.round");
     $("ranking").innerHTML = rows.length
       ? rows.map((r, i) => rankRowHtml(r, i + 1)).join("")
-      : `<li class="empty">${allTrips.length ? "No station matches these marks. Untick the favourites or visited filter." : `No ${tripWord()}s with these filters, so nothing to rank.`}</li>`;
+      : `<li class="empty">${empty}</li>`;
 
     const key = rankKey();
     const credits = [];
     if (["warmth", "sun", "dry"].includes(key) || (key === "combined" && settings.combine.some((k) => ["warmth", "sun", "dry"].includes(k)))) {
-      credits.push('Weather: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo.com</a>');
+      credits.push(tr("credit.weather", { link: OPEN_METEO }));
     }
-    if (routeData) {
-      credits.push(
-        'Roads: <a href="https://project-osrm.org/" target="_blank" rel="noopener">OSRM</a> · borders and coast: Natural Earth · ' +
-        "national parks: Wikidata · World Heritage sites: OpenStreetMap"
-      );
-    }
+    if (routeData) credits.push(tr("credit.routes", { link: OSRM }));
     $("rankCredits").innerHTML = credits.join("<br>");
   }
 
@@ -1074,7 +1086,7 @@
             })
           : L.circleMarker([s.lat, s.lon], { pane: "stations", radius: 5, color: COLORS.panel, weight: 1.5, fillColor: COLORS.out, fillOpacity: 0.8 });
         marker
-          .bindTooltip(`<strong>${i + 1}. ${esc(s.name)}</strong><br>${fmtMetric(key, row.values[key])} · click for its trips`, {
+          .bindTooltip(`<strong>${i + 1}. ${esc(s.name)}</strong><br>${fmtMetric(key, row.values[key])} · ${tr("rank.clickForTrips")}`, {
             direction: "top",
             offset: [0, top ? -12 : -5],
           })
@@ -1173,7 +1185,7 @@
     if (!oneWay()) ring(settings.returnRadius, COLORS.back);
     if (settings.startRadius > 0) ring(settings.startRadius, COLORS.out);
     L.marker([home.lat, home.lon], { icon: homeIcon, keyboard: false, zIndexOffset: 500 })
-      .bindTooltip(`Home: ${esc(home.name)}`, { direction: "top", offset: [0, -14] })
+      .bindTooltip(tr("map.home", { name: esc(home.name) }), { direction: "top", offset: [0, -14] })
       .addTo(layers.home);
 
     if (settings.view === "destinations") {
@@ -1219,11 +1231,12 @@
         fillColor: n ? COLORS.out : COLORS[role],
         fillOpacity: n || role !== "far" ? 0.95 : 0.6,
       });
-      const where = role === "out" ? "Start area" : role === "back" ? "Return area" : fmtKm(km) + " from home";
-      const tripsLine = n ? `<br>${plural(n, tripWord())} ${viaWord()} ${esc(s.name)}${via === s.id ? " (filtered)" : ""}` : "";
+      const where = role === "out" ? tr("legend.startArea") : role === "back" ? tr("legend.returnArea") : tr("map.fromHome", { km: fmtKm(km) });
+      const filtered = via === s.id ? ` ${tr("map.filtered")}` : "";
+      const tripsLine = n ? `<br>${tr(`map.trips.${viaKind()}`, { n, place: esc(s.name) })}${filtered}` : "";
       const source = providersInData.length > 1 ? ` · ${esc(providerName(providerById.get(s.id)))}` : "";
       marker.bindTooltip(
-        `<strong>${esc(s.name)}</strong>${source}<br>${where}${tripsLine}<br><span class="tip-hint">Click for options</span>`,
+        `<strong>${esc(s.name)}</strong>${source}<br>${where}${tripsLine}<br><span class="tip-hint">${tr("map.clickForOptions")}</span>`,
         { direction: "top", offset: [0, -6] }
       );
       marker.bindPopup(() => stationMenu(s, n), { closeButton: false, className: "station-popup", offset: [0, -4] });
@@ -1236,9 +1249,9 @@
   // "about 9 °C highs, 2.1 h of sun a day, 8 rainy days" for one month of climate data.
   function monthWeather(w) {
     const parts = [];
-    if (w.t !== null) parts.push(`about ${Math.round(w.t)} °C highs`);
-    if (w.sun !== null) parts.push(`${w.sun} h of sun a day`);
-    if (w.rain !== null) parts.push(plural(Math.round(w.rain), "rainy day"));
+    if (w.t !== null) parts.push(tr("weather.highs", { n: Math.round(w.t) }));
+    if (w.sun !== null) parts.push(tr("weather.sun", { n: w.sun }));
+    if (w.rain !== null) parts.push(tr("count.rainyDays", { n: Math.round(w.rain) }));
     return parts.join(", ");
   }
 
@@ -1267,17 +1280,17 @@
     const bars = months
       .map((w, i) => {
         const h = w.t === null ? 0 : 3 + Math.round(((w.t - lo) / (hi - lo)) * 37);
-        return `<i class="${marked.has(i) ? "on" : ""}" style="height:${h}px" title="${MONTHS[i]}: ${esc(monthWeather(w))}"></i>`;
+        return `<i class="${marked.has(i) ? "on" : ""}" style="height:${h}px" title="${esc(cap(monthName(i, "short")))}: ${esc(monthWeather(w))}"></i>`;
       })
       .join("");
     const first = [...marked][0];
+    const letters = months.map((w, i) => `<span>${esc(cap(monthName(i, "narrow")))}</span>`).join("");
     return (
       '<div class="wx">' +
       `<div class="wx-bars" aria-hidden="true">${bars}</div>` +
-      `<div class="wx-months" aria-hidden="true">${MONTHS.map((m) => `<span>${m[0]}</span>`).join("")}</div>` +
-      (first !== undefined ? `<p class="wx-note">${MONTHS[first]}: ${esc(monthWeather(months[first]))}</p>` : "") +
-      `<p class="wx-credit">Typical highs, ${esc(climateData.period)} average, your dates marked · ` +
-      '<a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo.com</a></p>' +
+      `<div class="wx-months" aria-hidden="true">${letters}</div>` +
+      (first !== undefined ? `<p class="wx-note">${esc(cap(monthName(first, "long")))}: ${esc(monthWeather(months[first]))}</p>` : "") +
+      `<p class="wx-credit">${tr("weather.stripCredit", { period: esc(climateData.period) })} · ${OPEN_METEO}</p>` +
       "</div>"
     );
   }
@@ -1286,19 +1299,22 @@
   function stationMenu(s, viaCount) {
     const target = homeFor(s);
     const count = homeCounts.get(target.id);
-    const asHome = count === undefined ? "counting…" : plural(count, tripWord());
+    const asHome = count === undefined ? tr("menu.counting") : tripsText(count);
     const source = providersInData.length > 1 ? ` · ${esc(providerName(providerById.get(s.id)))}` : "";
     const lines = [`<p><strong>${esc(s.name)}</strong>${source}</p>`];
     lines.push(weatherStripHtml(s));
     if (target.id === settings.home) {
-      lines.push("<p>Your home station</p>");
+      lines.push(`<p>${tr("menu.yourHome")}</p>`);
     } else {
-      const who = target.id === s.id ? "As home" : `${esc(target.name)} as home`;
-      lines.push(`<p>${who}: ${asHome}</p>`);
-      lines.push(`<button type="button" data-action="home">Set ${target.id === s.id ? "" : esc(target.name) + " "}as home</button>`);
+      const same = target.id === s.id;
+      const name = esc(target.name);
+      lines.push(`<p>${same ? tr("menu.asHome", { trips: asHome }) : tr("menu.asHomeOther", { name, trips: asHome })}</p>`);
+      lines.push(`<button type="button" data-action="home">${same ? tr("menu.setHome") : tr("menu.setHomeOther", { name })}</button>`);
     }
-    if (via === s.id) lines.push('<button type="button" data-action="via">Show all trips again</button>');
-    else if (viaCount) lines.push(`<button type="button" data-action="via">Trips ${viaWord()} ${esc(s.name)} (${viaCount})</button>`);
+    if (via === s.id) lines.push(`<button type="button" data-action="via">${tr("menu.showAllAgain")}</button>`);
+    else if (viaCount) {
+      lines.push(`<button type="button" data-action="via">${tr(`menu.trips.${viaKind()}`, { place: esc(s.name), n: viaCount })}</button>`);
+    }
 
     const el = document.createElement("div");
     el.className = "station-menu";
@@ -1363,7 +1379,7 @@
     const sites = f ? f.sites : [];
     for (const s of sites) {
       L.marker([s.lat, s.lon], { pane: "sites", icon: SITE_ICONS[s.kind], keyboard: false })
-        .bindTooltip(`<strong>${esc(s.name)}</strong><br>${SITE_KINDS[s.kind]}`, { direction: "top", offset: [0, -6] })
+        .bindTooltip(`<strong>${esc(s.name)}</strong><br>${siteKind(s.kind)}`, { direction: "top", offset: [0, -6] })
         .addTo(layers.trip);
     }
     showSiteLegend(sites);
@@ -1531,9 +1547,9 @@
   function fmtClock(iso, timeZone) {
     const opts = { hour: "2-digit", minute: "2-digit", hourCycle: "h23" };
     try {
-      return new Intl.DateTimeFormat("en-GB", { ...opts, timeZone: timeZone || undefined }).format(new Date(iso));
+      return I18n.dates({ ...opts, timeZone: timeZone || undefined }).format(new Date(iso));
     } catch (e) {
-      return new Intl.DateTimeFormat("en-GB", opts).format(new Date(iso)); // unknown time zone name
+      return I18n.dates(opts).format(new Date(iso)); // unknown time zone name
     }
   }
 
@@ -1544,36 +1560,37 @@
     `stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${shapes}</svg>`;
   const VEHICLES = {
     train: {
-      word: "train",
+      word: () => tr("vehicle.train"),
       icon: whIcon('<rect x="3.5" y="1.5" width="9" height="10" rx="2"/><path d="M3.5 7h9M6 9.3h.01M10 9.3h.01M5.5 11.5 4 14.5M10.5 11.5l1.5 3"/>'),
     },
     bus: {
-      word: "bus",
+      word: () => tr("vehicle.bus"),
       icon: whIcon('<rect x="2" y="2.5" width="12" height="9" rx="1.5"/><path d="M2 7.5h12M4.5 11.5v2M11.5 11.5v2M5 9.5h.01M11 9.5h.01"/>'),
     },
     ferry: {
-      word: "ferry",
+      word: () => tr("vehicle.ferry"),
       icon: whIcon('<path d="M2 9.5h12l-1.5 3.5h-9zM4.5 9.5v-4h7v4M8 5.5v-3"/>'),
     },
   };
   const MOON_ICON = whIcon('<path d="M13 9.5A5.5 5.5 0 0 1 6.5 3 5.5 5.5 0 1 0 13 9.5z"/>');
 
-  // "Train", "Bus" or "Train and bus", with their icons in front.
+  // "Train", "Bus" or "Train and bus" ("Zug und Bus"), with their icons in front.
   function vehiclesHtml(kinds) {
-    if (!kinds.length) return "On foot";
-    const words = kinds.map((k) => VEHICLES[k].word).join(" and ");
-    return kinds.map((k) => VEHICLES[k].icon).join("") + words[0].toUpperCase() + words.slice(1);
+    if (!kinds.length) return tr("vehicle.onFoot");
+    const words = I18n.lists().format(kinds.map((k) => VEHICLES[k].word()));
+    return kinds.map((k) => VEHICLES[k].icon).join("") + esc(cap(words));
   }
 
   const daysBetween = (fromDay, toDay) => Math.round((new Date(`${toDay}T00:00:00Z`) - new Date(`${fromDay}T00:00:00Z`)) / 864e5);
 
   const extLink = (url, text) => `<a class="book" href="${url}" target="_blank" rel="noopener">${text} ↗</a>`;
 
+  // Why live times are missing, by the reason serve.py gives.
   const TRANSIT_TROUBLE = {
-    "no-server": "Live times need the local server, so open the site with open-site.bat.",
-    "no-contact": "Live times need your contact in config.local.json (see the README).",
-    limit: "Today's limit for live lookups is used up.",
-    upstream: "The timetable service didn't answer.",
+    "no-server": "transit.noServer",
+    "no-contact": "transit.noContact",
+    limit: "transit.limit",
+    upstream: "transit.upstream",
   };
 
   let whDetailsOpen = false; // whether "Connection details" is slid out; kept while you switch connections and trips
@@ -1581,7 +1598,7 @@
   // Exact minutes, unlike fmtDuration: a 7-minute change must not read as 5.
   function fmtMinutes(min) {
     const m = Math.round(min);
-    return m >= 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")} min` : `${m} min`;
+    return m >= 60 ? tr("unit.hMin", { h: Math.floor(m / 60), m: String(m % 60).padStart(2, "0") }) : tr("unit.min", { m });
   }
 
   // The chosen connection step by step: every station with its time, every ride and every change.
@@ -1593,38 +1610,41 @@
     const items = steps.map((s) => {
       if (s.type === "stop") {
         const day = W.localDay(s.time, s.tz);
-        const extra = (s.track ? ` · platform ${esc(s.track)}` : "") + (day !== firstDay ? ` · ${fmtDay(day)}` : "");
+        const extra = (s.track ? ` · ${tr("steps.platform", { track: esc(s.track) })}` : "") + (day !== firstDay ? ` · ${fmtDay(day)}` : "");
         return `<li class="wh-stop"><span class="wh-clock">${fmtClock(s.time, s.tz)}</span><span>${esc(s.name)}<span class="wh-extra">${extra}</span></span></li>`;
       }
       if (s.type === "ride") {
-        const towards = s.towards ? ` towards ${esc(s.towards)}` : "";
+        const towards = s.towards ? ` ${tr("steps.towards", { place: esc(s.towards) })}` : "";
         return `<li class="wh-leg ride"><span>${VEHICLES[s.kind].icon}${esc(s.line)}${towards} · ${fmtMinutes(s.durationMin)}</span></li>`;
       }
       if (s.type === "change") {
-        const walk = s.to ? `, walk to ${esc(s.to)}` : s.walkMin >= 2 ? `, ${fmtMinutes(s.walkMin)} of it on foot` : "";
-        return `<li class="wh-leg"><span>Change · ${fmtMinutes(s.durationMin)}${walk}</span></li>`;
+        const time = fmtMinutes(s.durationMin);
+        const text = s.to ? tr("steps.changeWalkTo", { time, place: esc(s.to) })
+          : s.walkMin >= 2 ? tr("steps.changeOnFoot", { time, walk: fmtMinutes(s.walkMin) })
+            : tr("steps.change", { time });
+        return `<li class="wh-leg"><span>${text}</span></li>`;
       }
-      const where = s.where === "start" ? "Walk to the station" : `Walk to ${esc(home.name)}`;
+      const where = s.where === "start" ? tr("steps.walkStart") : tr("steps.walkEnd", { place: esc(home.name) });
       return `<li class="wh-leg"><span>${where} · ${fmtMinutes(s.durationMin)}</span></li>`;
     });
     return (
       `<div class="cost-details"><ol class="wh-steps">${items.join("")}</ol>` +
-      '<p class="cost-note">Timetable times. Platforms can change on the day.</p></div>'
+      `<p class="cost-note">${tr("steps.note")}</p></div>`
     );
   }
 
   function transitHtml(end, home, est, live, chosen, date) {
     const mapsLink = extLink(W.googleMapsUrl(end, home, "transit"), "Google Maps");
-    const estimate = `About ${fmtRange(est.lowMin, est.highMin)} by train or bus`;
-    if (!live) return '<p class="wh-main">Looking up connections…</p>';
+    const estimate = tr("transit.estimate", { range: fmtRange(est.lowMin, est.highMin) });
+    if (!live) return `<p class="wh-main">${tr("transit.looking")}</p>`;
     if (live.error || !live.options.length) {
-      const why = live.error ? TRANSIT_TROUBLE[live.reason] || TRANSIT_TROUBLE.upstream : "No connections found in the two days after the drop-off.";
+      const why = live.error ? tr(TRANSIT_TROUBLE[live.reason] || TRANSIT_TROUBLE.upstream) : tr("transit.none");
       const retry = live.error && live.reason === "upstream"
-        ? '<button type="button" class="wh-retry" data-mode="transit" data-retry="1">Try again</button>'
+        ? `<button type="button" class="wh-retry" data-mode="transit" data-retry="1">${tr("wh.retry")}</button>`
         : "";
       return (
         `<p class="wh-main">${estimate}</p>` +
-        `<p class="wh-detail">${why} The time is a rough estimate from the distance.</p>` +
+        `<p class="wh-detail">${why} ${tr("transit.rough")}</p>` +
         `<div class="wh-links">${retry}${mapsLink}</div>`
       );
     }
@@ -1633,55 +1653,56 @@
     const rows = live.options.map((o, i) => {
       const startDay = W.localDay(o.start, o.startTz);
       const later = daysBetween(date, startDay);
-      const when = later <= 0 ? "same day" : later === 1 ? "next day" : `${later} days later`;
+      const when = later <= 0 ? tr("transit.sameDay") : later === 1 ? tr("transit.nextDay") : tr("transit.daysLater", { n: later });
       const nights = daysBetween(startDay, W.localDay(o.end, o.endTz));
-      const changes = o.transfers === 0 ? "direct" : plural(o.transfers, "change");
+      const changes = o.transfers === 0 ? tr("transit.direct") : tr("count.changes", { n: o.transfers });
       return (
         `<li><button type="button" class="wh-option" data-itinerary="${i}" aria-pressed="${i === chosen}">` +
         `<span class="wh-day">${fmtDay(startDay)} · ${when}</span>` +
-        `${i === 0 ? '<span class="wh-tag">Fastest</span>' : "<span></span>"}` +
+        `${i === 0 ? `<span class="wh-tag">${tr("transit.fastest")}</span>` : "<span></span>"}` +
         `<span class="wh-times">${fmtClock(o.start, o.startTz)} → ${fmtClock(o.end, o.endTz)}` +
         `${nights > 0 ? `<span class="wh-plus">+${nights}</span>` : ""}</span>` +
         `<span class="wh-dur">${fmtDuration(o.durationMin)}</span>` +
         `<span class="wh-how">${vehiclesHtml(o.vehicles)} · ${changes}` +
-        `${o.overnight ? ` · <span class="wh-night">${MOON_ICON}overnight</span>` : ""}</span>` +
+        `${o.overnight ? ` · <span class="wh-night">${MOON_ICON}${tr("transit.overnight")}</span>` : ""}</span>` +
         "</button></li>"
       );
     });
     const until = new Date(`${date}T${settings.dropoffTime}:00`);
     until.setDate(until.getDate() + SEARCH_DAYS);
-    const untilDay = new Intl.DateTimeFormat("en-GB", { weekday: "short" }).format(until);
+    const untilDay = I18n.dates({ weekday: "short" }).format(until);
+    const time = esc(settings.dropoffTime);
+    const transitous = '<a href="https://transitous.org/" target="_blank" rel="noopener">Transitous</a>';
+    const sources = `<a href="https://transitous.org/sources/" target="_blank" rel="noopener">${tr("transit.sources")}</a>`;
     return (
-      `<p class="wh-main">Best connections until ${untilDay} ${esc(settings.dropoffTime)}</p>` +
+      `<p class="wh-main">${tr("transit.bestUntil", { day: untilDay, time })}</p>` +
       `<ol class="wh-options">${rows.join("")}</ol>` +
       `<button type="button" class="cost-toggle" data-wh-details aria-expanded="${whDetailsOpen}" aria-controls="whSteps">` +
-      '<span>Connection details</span><span class="cost-chevron" aria-hidden="true"></span></button>' +
+      `<span>${tr("transit.details")}</span><span class="cost-chevron" aria-hidden="true"></span></button>` +
       `<div class="cost-slide${whDetailsOpen ? " open" : ""}" id="whSteps"><div>${stepsHtml(live.options[chosen], home)}</div></div>` +
-      `<p class="wh-detail">Searched ${SEARCH_DAYS * 24} hours after the ${esc(settings.dropoffTime)} drop-off. ` +
-      "Pick one to see it on the map. Book the tickets with the train or bus company.</p>" +
+      `<p class="wh-detail">${tr("transit.searched", { n: SEARCH_DAYS * 24, time })}</p>` +
       `<div class="wh-links">${mapsLink}</div>` +
-      '<p class="wh-credit">Times by <a href="https://transitous.org/" target="_blank" rel="noopener">Transitous</a> · ' +
-      '<a href="https://transitous.org/sources/" target="_blank" rel="noopener">data sources</a></p>'
+      `<p class="wh-credit">${tr("transit.credit", { link: transitous, sources })}</p>`
     );
   }
 
   function carHtml(end, home, drive) {
-    const mapsLink = extLink(W.googleMapsUrl(end, home, "driving"), "Route in Google Maps");
-    if (!drive) return '<p class="wh-main">Working out the route…</p>';
+    const mapsLink = extLink(W.googleMapsUrl(end, home, "driving"), tr("car.mapsLink"));
+    if (!drive) return `<p class="wh-main">${tr("car.working")}</p>`;
     if (drive.error) {
       return (
-        "<p class=\"wh-main\">The route didn't load</p>" +
-        "<p class=\"wh-detail\">The free routing service didn't answer.</p>" +
-        `<div class="wh-links"><button type="button" class="wh-retry" data-mode="car" data-retry="1">Try again</button>${mapsLink}</div>`
+        `<p class="wh-main">${tr("car.failed")}</p>` +
+        `<p class="wh-detail">${tr("car.noAnswer")}</p>` +
+        `<div class="wh-links"><button type="button" class="wh-retry" data-mode="car" data-retry="1">${tr("wh.retry")}</button>${mapsLink}</div>`
       );
     }
     const cost = W.fuelCost(drive.km, settings.carConsumption, settings.fuelPrice);
+    const detail = tr("car.detail", { cost: euros(cost), consumption: settings.carConsumption, price: eurosCents(settings.fuelPrice) });
     return (
       `<p class="wh-main">${fmtKm(drive.km)} · ${fmtDuration(drive.min)}</p>` +
-      `<p class="wh-detail">Driving time without traffic or breaks. Fuel about €${Math.round(cost)} ` +
-      `at ${settings.carConsumption} l/100 km and €${settings.fuelPrice.toFixed(2)}/l. Needs a lift or a one-way rental car.</p>` +
+      `<p class="wh-detail">${detail}</p>` +
       `<div class="wh-links">${mapsLink}</div>` +
-      '<p class="wh-credit">Route by OSRM, © OpenStreetMap contributors</p>'
+      `<p class="wh-credit">${tr("car.credit")}</p>`
     );
   }
 
@@ -1715,7 +1736,7 @@
     const home = homeDest();
     const crowKm = M.haversineKm(end, home);
     if (crowKm < 3 || M.haversineKm(end, stations.get(settings.home)) < 3) {
-      panel.innerHTML = "<p class=\"wh-detail\">The last van goes back to your home station, so you're home already.</p>";
+      panel.innerHTML = `<p class="wh-detail">${tr("wh.homeAlready")}</p>`;
       return;
     }
 
@@ -1749,11 +1770,11 @@
       : liveOk ? fmtDuration(live.options[0].durationMin) : fmtRange(transit.lowMin, transit.highMin);
 
     panel.innerHTML =
-      `<h4>Getting home from ${esc(end.name)}</h4>` +
-      `<p class="wh-sub">${fmtDay(date)} · ${fmtKm(crowKm)} to ${esc(home.name)} as the crow flies</p>` +
-      '<div class="wh-tabs" role="tablist" aria-label="How to get home">' +
-      tab("transit", "Train & bus", transitSummary) +
-      tab("car", "Car", !drive ? "…" : drive.error ? "–" : fmtDuration(drive.min)) +
+      `<h4>${tr("wh.title", { place: esc(end.name) })}</h4>` +
+      `<p class="wh-sub">${tr("wh.sub", { date: fmtDay(date), km: fmtKm(crowKm), home: esc(home.name) })}</p>` +
+      `<div class="wh-tabs" role="tablist" aria-label="${esc(tr("wh.tabs"))}">` +
+      tab("transit", esc(tr("wh.transit")), transitSummary) +
+      tab("car", esc(tr("wh.car")), !drive ? "…" : drive.error ? "–" : fmtDuration(drive.min)) +
       "</div>" +
       `<div class="wh-body" role="tabpanel">${body}</div>`;
     drawWayHome(mode, end, home, drive, liveOk ? live.options[chosen] : null);
@@ -1773,7 +1794,7 @@
     for (const panel of $("results").querySelectorAll(".along, .wayhome")) panel.remove();
     const el = $("results").querySelector(".trip.selected");
     if (el) el.insertAdjacentHTML("beforeend", alongHtml(t));
-    if (el && settings.wayHome) el.insertAdjacentHTML("beforeend", '<section class="wayhome" aria-label="Getting home"></section>');
+    if (el && settings.wayHome) el.insertAdjacentHTML("beforeend", `<section class="wayhome" aria-label="${esc(tr("wh.section"))}"></section>`);
     renderWayHome(t);
   }
 
@@ -1786,27 +1807,27 @@
     names.length <= max + 1
       ? esc(names.join(", "))
       : esc(names.slice(0, max).join(", ")) +
-        `<button type="button" class="more-names" data-more>, +${names.length - max} more</button>` +
+        `<button type="button" class="more-names" data-more>, ${tr("list.more", { n: names.length - max })}</button>` +
         `<span hidden>, ${esc(names.slice(max).join(", "))}</span>`;
 
   function alongLegHtml(leg, kind, a, b) {
     const main = leg.measured
-      ? `${fmtKm(leg.km)}${leg.drivingMin !== null ? ` · about ${fmtDuration(leg.drivingMin)} driving` : ""}`
-      : `about ${fmtKm(leg.km)}, estimated`;
+      ? `${fmtKm(leg.km)}${leg.drivingMin !== null ? ` · ${tr("along.driving", { time: fmtDuration(leg.drivingMin) })}` : ""}`
+      : tr("along.estimated", { km: fmtKm(leg.km) });
     const countries = leg.countries.length > 1 ? `<p class="along-detail">${esc(leg.countries.map(countryName).join(" → "))}</p>` : "";
     const details = [];
     if (!leg.measured) {
-      details.push("Road, scenery and driving time come with the next data update");
+      details.push(tr("along.pending"));
     } else {
-      if (leg.parks.length) details.push(`National parks: ${nameList(leg.parks)}`);
-      if (leg.unesco.length) details.push(`World Heritage: ${nameList(leg.unesco)}`);
-      if (leg.coastKm) details.push(`${fmtKm(leg.coastKm)} by the sea`);
-      if (leg.mountainKm) details.push(`${fmtKm(leg.mountainKm)} above 1,000 m`);
-      if (leg.maxElevation !== null) details.push(`highest point ${leg.maxElevation.toLocaleString("en-GB")} m`);
+      if (leg.parks.length) details.push(tr("along.parks", { names: nameList(leg.parks) }));
+      if (leg.unesco.length) details.push(tr("along.unesco", { names: nameList(leg.unesco) }));
+      if (leg.coastKm) details.push(tr("scenic.coast", { km: fmtKm(leg.coastKm) }));
+      if (leg.mountainKm) details.push(tr("scenic.mountains", { km: fmtKm(leg.mountainKm) }));
+      if (leg.maxElevation !== null) details.push(tr("along.highest", { n: leg.maxElevation }));
       if (NO_SITE_LOOKUP.has(a.country) || NO_SITE_LOOKUP.has(b.country)) {
-        details.push("parks and World Heritage sites are only looked up in Europe");
+        details.push(tr("along.europeOnly"));
       } else if (!leg.parks.length && !leg.unesco.length && !leg.coastKm && !leg.mountainKm) {
-        details.push("no national parks, World Heritage sites, coast or mountains near the road");
+        details.push(tr("along.nothing"));
       }
     }
     return (
@@ -1822,13 +1843,13 @@
   function alongStopHtml(s, arrive, leave) {
     const w = R.weatherFor(climateData, s.id, arrive);
     const text = w && monthWeather(w)
-      ? `${monthWeather(w)} in ${MONTHS[w.month]} (${esc(climateData.period)} average)`
-      : "No weather data for this station yet";
+      ? tr("along.weather", { weather: monthWeather(w), month: monthName(w.month, "long"), period: esc(climateData.period) })
+      : tr("along.noWeather");
     const when = leave && leave !== arrive ? `${fmtDay(arrive)} – ${fmtDay(leave)}` : fmtDay(arrive);
     return (
       '<li class="along-stop">' +
       `<p class="along-main">${esc(s.name)}, ${when}</p>` +
-      `<p class="along-detail">${text[0].toUpperCase()}${text.slice(1)}</p>` +
+      `<p class="along-detail">${cap(text)}</p>` +
       "</li>"
     );
   }
@@ -1846,18 +1867,19 @@
     if (t.type === "oneway") items.push(alongStopHtml(stations.get(lastLeg(t).to), lastLeg(t).return, null));
     const summary =
       f.drivingMinPerDay !== null
-        ? `<p class="wh-detail">About ${fmtDuration(f.drivingMinPerDay)} driving a day on average, ${fmtDuration(f.drivingMin)} in all.</p>`
+        ? `<p class="wh-detail">${tr("along.summary", { perDay: fmtDuration(f.drivingMinPerDay), total: fmtDuration(f.drivingMin) })}</p>`
         : "";
     const credits = [
-      routeData && '<a href="https://project-osrm.org/" target="_blank" rel="noopener">OSRM</a> (roads), Wikidata (national parks), OpenStreetMap (World Heritage sites)',
-      climateData && '<a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo.com</a> (weather)',
+      routeData && tr("along.creditRoutes", { link: OSRM }),
+      climateData && tr("along.creditWeather", { link: OPEN_METEO }),
     ].filter(Boolean);
+    const title = tr("along.title");
     return (
-      '<section class="along" aria-label="Along the way">' +
-      "<h4>Along the way</h4>" +
+      `<section class="along" aria-label="${esc(title)}">` +
+      `<h4>${title}</h4>` +
       `<ol class="along-list">${items.join("")}</ol>` +
       summary +
-      (credits.length ? `<p class="wh-credit">Sources: ${credits.join(", ")}</p>` : "") +
+      (credits.length ? `<p class="wh-credit">${tr("along.sources", { list: credits.join(", ") })}</p>` : "") +
       "</section>"
     );
   }
@@ -1907,7 +1929,7 @@
   }
 
   function updatePlayButton() {
-    $("playAll").textContent = playing ? "Pause" : "Play all";
+    $("playAll").textContent = tr(playing ? "map.pause" : "map.playAll");
     $("playAll").setAttribute("aria-pressed", String(playing));
   }
 
@@ -2208,11 +2230,17 @@
     }
   }
 
-  function startLanding() {
+  function showLandingStats() {
     const total = [...offers.values()].reduce((n, set) => n + set.size, 0);
-    $("landingStats").textContent =
-      `${total.toLocaleString("en-GB")} ${total === 1 ? "rally" : "rallies"} · ` +
-      `${stations.size.toLocaleString("en-GB")} stations · updated ${when}`;
+    $("landingStats").textContent = tr("landing.stats", {
+      rallies: tr("count.rallies", { n: total }),
+      stations: tr("count.stations", { n: stations.size }),
+      when: fetchedWhen(),
+    });
+  }
+
+  function startLanding() {
+    showLandingStats();
     for (const s of stations.values()) {
       L.circleMarker([s.lat, s.lon], {
         pane: "stations", radius: 4, color: COLORS.panel, weight: 1.5, fillColor: COLORS.far, fillOpacity: 1, interactive: false,
@@ -2284,21 +2312,67 @@
     if (!offers.has(p)) offers.set(p, new Set());
     offers.get(p).add(r.ref ?? `${r.from}-${r.to}-${r.pickup}`);
   }
-  const counts = providersInData.map((p) => {
-    const n = offers.get(p).size.toLocaleString("en-GB");
-    return PROVIDERS[p] ? `${n} ${PROVIDERS[p].name} ${PROVIDERS[p].unit}` : `${n} from ${esc(p)}`;
-  });
-  const problems = Object.entries(sources).flatMap(([p, info]) => {
-    const ageDays = (Date.now() - new Date(info.fetched_at).getTime()) / 86400000;
-    const old = ageDays > 1 ? `${plural(Math.floor(ageDays), "day")} old` : "";
-    if (info.error) return [`${esc(providerName(p))} didn't answer on the last update${old ? `, its data is ${old}` : ""}.`];
-    return old ? [`The ${esc(providerName(p))} data is ${old}.`] : [];
-  });
-  const when = new Date(data.fetched_at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
-  $("dataInfo").innerHTML =
-    `${counts.join(" · ")} · updated ${esc(when)}` +
-    (problems.length ? `<span class="stale">${problems.join(" ")} Run update-data.bat for fresh rallies.</span>` : "");
+  const fetchedWhen = () =>
+    I18n.dates({ day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(data.fetched_at));
 
+  // "1,234 roadsurfer rallies · 56 Imoova relocations · updated 5 Jan, 08:00", and any provider that is behind.
+  function showDataInfo() {
+    const counts = providersInData.map((p) => {
+      const n = offers.get(p).size;
+      return PROVIDERS[p] ? tr(`data.count.${p}`, { n }) : tr("data.count.other", { n, provider: esc(p) });
+    });
+    const problems = Object.entries(sources).flatMap(([p, info]) => {
+      const ageDays = (Date.now() - new Date(info.fetched_at).getTime()) / 86400000;
+      const age = ageDays > 1 ? tr("data.daysOld", { n: Math.floor(ageDays) }) : "";
+      const provider = esc(providerName(p));
+      if (info.error) return [age ? tr("data.noAnswerOld", { provider, age }) : tr("data.noAnswer", { provider })];
+      return age ? [tr("data.old", { provider, age })] : [];
+    });
+    $("dataInfo").innerHTML =
+      `${counts.join(" · ")} · ${tr("data.updated", { when: esc(fetchedWhen()) })}` +
+      (problems.length ? `<span class="stale">${problems.join(" ")} ${tr("data.runUpdate")}</span>` : "");
+  }
+
+  // The insurance choices name their price: "Plus, €15 a day".
+  function labelInsurance() {
+    const names = { 0: "costs.insurance.basic", 15: "costs.insurance.plus", 29: "costs.insurance.max" };
+    for (const option of $("insurance").options) option.textContent = tr(names[option.value], { price: euros(Number(option.value)) });
+  }
+
+  // ---------- Language ----------
+
+  // A language picked with the flag redraws every text in place: the choices in the form,
+  // the selected trip and the map stay as they are.
+  function relabel() {
+    labelThemeToggle();
+    updatePlayButton();
+    labelInsurance();
+    const home = $("home").value;
+    fillHomeSelect();
+    $("home").value = home;
+    updateHomeLabels();
+    const unticked = providerBoxes().filter((box) => !box.checked).map((box) => box.value);
+    fillProviders();
+    for (const box of providerBoxes()) box.checked = !unticked.includes(box.value);
+    showDataInfo();
+    updateOutputs();
+    if (landing) {
+      showLandingStats();
+      return;
+    }
+    if ($("dateError").textContent) $("dateError").textContent = dateError();
+    updateLegend();
+    map.closePopup();
+    renderList();
+    renderRanking();
+    drawBase();
+    if (selectedId && trips.some((x) => x.id === selectedId)) selectTrip(selectedId, { animate: false });
+  }
+  I18n.onChange(relabel);
+
+  showDataInfo();
+  labelInsurance();
+  updatePlayButton();
   fillHomeSelect();
   fillProviders();
   writeForm();

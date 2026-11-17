@@ -99,11 +99,46 @@ body {
 
 .meta { color: var(--muted); font-size: 13px; margin: 4px 0 0; }
 
-/* Light | dark, top right of the panel: the moon offers dark, the sun offers light. */
+/* Top right of the panel: the flag opens the languages; the moon offers dark, the sun offers light. */
 .panel-head { position: relative; }
-.panel-head h1 { padding-right: 36px; }
-.theme-toggle { position: absolute; top: 0; right: 0; display: grid; place-items: center; padding: 0; }
-.theme-toggle svg { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.panel-head h1 { padding-right: 70px; }
+.head-tools { position: absolute; top: 0; right: 0; display: flex; gap: 6px; }
+.head-btn { display: grid; place-items: center; padding: 0; }
+.head-btn svg { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.icon-btn.head-btn[aria-expanded="true"] { border-color: var(--muted); color: var(--text); }
+
+.lang { position: relative; }
+.lang-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 1300;
+  min-width: 150px;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.14);
+}
+.lang-menu button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--text);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.lang-menu button:hover, .lang-menu button:focus-visible { background: var(--soft); outline: none; }
+.lang-menu button[aria-checked="true"] { font-weight: 600; }
+.lang-menu button[aria-checked="true"]::after { content: "✓"; color: var(--out); font-weight: 700; }
+
 .theme-toggle .sun { display: none; }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .theme-toggle .sun { display: block; }
