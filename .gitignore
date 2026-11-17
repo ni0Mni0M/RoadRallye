@@ -4,6 +4,9 @@ config.local.json
 # Downloaded data: rebuilt by update-data.bat, changes daily, and comes from third parties.
 web/data/
 
+# Every rally ever scraped (scraper/history.py). Grows with each run and can't be rebuilt: back it up.
+history/
+
 # Local editor and assistant settings
 .claude/
 

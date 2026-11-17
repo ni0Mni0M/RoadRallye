@@ -1,8 +1,10 @@
 """Run with: python -m unittest discover -s tests"""
 
+import csv
 import http.client
 import io
 import sys
+import tempfile
 import unittest
 from datetime import date
 from pathlib import Path
@@ -10,6 +12,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scraper"))
 
+import history  # noqa: E402
 import imoova  # noqa: E402
 from common import Client  # noqa: E402
 from fetch_rallies import drop_known_rallies, previous_part  # noqa: E402
@@ -151,6 +154,70 @@ class PreviousPart(unittest.TestCase):
         part = previous_part(old, "imoova")
         self.assertEqual(part["fetched_at"], "2026-11-01T07:00:00Z")
         self.assertEqual(len(part["rallies"]), 1)
+
+
+def scrape(day, rallies):
+    """What fetch_rallies saves: the roadsurfer rally plus the given Imoova ones."""
+    part = imoova_part(rallies)
+    return {
+        "fetched_at": f"{day}T07:00:00Z",
+        "stations": ROADSURFER["stations"] + part["stations"],
+        "rallies": ROADSURFER["rallies"] + part["rallies"],
+    }
+
+
+class History(unittest.TestCase):
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.path = Path(folder.name) / "history" / "rallies.csv"
+
+    def rows(self):
+        with self.path.open(encoding="utf-8-sig", newline="") as f:
+            return list(csv.DictReader(f))
+
+    def test_first_run_adds_every_rally(self):
+        added = history.append_new(self.path, scrape("2026-11-01", [relocation("1", LAS_VEGAS, BILBAO, "2026-11-03", "2026-11-04")]))
+        self.assertEqual(added, 3)
+        rows = self.rows()
+        self.assertEqual(list(rows[0]), history.COLUMNS)
+        self.assertEqual(rows[0]["provider"], "roadsurfer")
+        self.assertEqual((rows[0]["from_id"], rows[0]["from_name"], rows[0]["price"]), ("76", "Las Vegas", ""))
+        imoova_row = rows[1]
+        self.assertEqual(imoova_row["provider"], "imoova")
+        self.assertEqual((imoova_row["to_name"], imoova_row["to_country"]), ("Bilbao", "ES"))
+        self.assertEqual((imoova_row["pickup"], imoova_row["return"]), ("2026-11-03", "2026-11-15"))
+        self.assertEqual((imoova_row["price"], imoova_row["currency"], imoova_row["ref"]), ("61.0", "USD", "1"))
+        self.assertEqual(imoova_row["supplier"], "Indie Campers")
+        self.assertEqual({r["first_seen"] for r in rows}, {"2026-11-01"})
+
+    def test_same_scrape_again_adds_nothing(self):
+        data = scrape("2026-11-01", [relocation("1", LAS_VEGAS, BILBAO, "2026-11-03", "2026-11-04")])
+        history.append_new(self.path, data)
+        before = self.path.read_bytes()
+        self.assertEqual(history.append_new(self.path, data), 0)
+        self.assertEqual(self.path.read_bytes(), before)
+
+    def test_later_scrape_adds_only_the_new_ones_and_keeps_the_old_rows(self):
+        history.append_new(self.path, scrape("2026-11-01", [relocation("1", LAS_VEGAS, BILBAO, "2026-11-03", "2026-11-04")]))
+        # A day later: the pickup on the 3rd is gone, the 5th is new, and the 4th costs more now.
+        later = scrape("2026-11-02", [relocation("1", LAS_VEGAS, BILBAO, "2026-11-04", "2026-11-05", fee=9900)])
+        self.assertEqual(history.append_new(self.path, later), 1)
+        rows = self.rows()
+        self.assertEqual([r["pickup"] for r in rows], ["2026-11-02", "2026-11-03", "2026-11-04", "2026-11-05"])
+        self.assertEqual([r["first_seen"] for r in rows], ["2026-11-01"] * 3 + ["2026-11-02"])
+        self.assertEqual(rows[2]["price"], "61.0")  # as first seen, not the new price
+
+    def test_same_rally_twice_in_one_scrape_is_added_once(self):
+        data = scrape("2026-11-01", [])
+        data["rallies"] = data["rallies"] * 2
+        self.assertEqual(history.append_new(self.path, data), 1)
+
+    def test_keeps_names_with_commas_and_umlauts(self):
+        data = scrape("2026-11-01", [])
+        data["stations"] = [{**data["stations"][0], "name": "Köln, Flughafen"}] + data["stations"][1:]
+        history.append_new(self.path, data)
+        self.assertEqual(self.rows()[0]["from_name"], "Köln, Flughafen")
 
 
 ECB_SAMPLE = b"""<?xml version="1.0" encoding="UTF-8"?>

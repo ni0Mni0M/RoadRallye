@@ -14,6 +14,7 @@ import time
 from datetime import date, datetime, timezone
 from pathlib import Path
 
+import history
 import imoova
 import progress
 import roadsurfer
@@ -21,6 +22,7 @@ from common import Client, haversine_km
 from rates import fetch_rates
 
 DEFAULT_OUT = Path(__file__).resolve().parent.parent / "web" / "data"
+DEFAULT_HISTORY = Path(__file__).resolve().parent.parent / "history" / "rallies.csv"
 SOURCES = ["roadsurfer", "imoova"]
 LABELS = {"roadsurfer": ("roadsurfer", "rallies"), "imoova": ("Imoova", "relocations")}  # bar label, what it counts
 
@@ -112,6 +114,8 @@ def main():
     parser.add_argument("--locale", default="en", help="roadsurfer station name language: en or de (default en)")
     parser.add_argument("--delay", type=float, default=0.4, help="seconds between requests (default 0.4)")
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT, help="output folder (default web/data)")
+    parser.add_argument("--history", type=Path, default=DEFAULT_HISTORY,
+                        help="list of every rally ever seen, new ones are added (default history/rallies.csv)")
     parser.add_argument("--source", action="append", choices=SOURCES,
                         help="only fetch this source and keep the others' saved data (repeatable)")
     args = parser.parse_args()
@@ -178,6 +182,11 @@ def main():
     write_atomic(args.out / "rallies.json", body)
     # Same data as a script, so index.html also works when opened straight from disk.
     write_atomic(args.out / "rallies.js", f"window.RALLY_DATA = {body};\n")
+
+    try:
+        progress.item("history", f"{history.append_new(args.history, data)} new rallies added to {args.history.name}")
+    except Exception as e:  # the page's data is saved; a locked or broken history file shouldn't fail the run
+        progress.item("history", f"not updated: {e}", ok=False)
 
     counts = ", ".join(f"{len(p['rallies'])} from {name}" for name, p in parts.items())
     progress.item("saved", f"{counts} at {len(data['stations'])} stations ({time.time() - started:.0f}s)")
