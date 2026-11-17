@@ -1,13 +1,17 @@
 """Run with: python -m unittest discover -s tests"""
 
+import http.client
+import io
 import sys
 import unittest
 from datetime import date
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scraper"))
 
 import imoova  # noqa: E402
+from common import Client  # noqa: E402
 from fetch_rallies import drop_known_rallies, previous_part  # noqa: E402
 from rates import parse_ecb  # noqa: E402
 
@@ -168,6 +172,23 @@ class ParseEcb(unittest.TestCase):
     def test_file_without_rates_fails(self):
         with self.assertRaises(ValueError):
             parse_ecb(b"<Envelope><Cube/></Envelope>")
+
+
+DROPPED = http.client.RemoteDisconnected("Remote end closed connection without response")
+
+
+@mock.patch("common.time.sleep")
+class ClientFetch(unittest.TestCase):
+    def test_retries_a_dropped_connection(self, _sleep):
+        with mock.patch("common.urllib.request.urlopen", side_effect=[DROPPED, io.BytesIO(b'{"ok": true}')]) as urlopen:
+            self.assertEqual(Client(0).fetch("https://example.invalid/x"), {"ok": True})
+        self.assertEqual(urlopen.call_count, 2)
+
+    def test_gives_up_after_the_last_retry(self, _sleep):
+        with mock.patch("common.urllib.request.urlopen", side_effect=[DROPPED] * 3) as urlopen:
+            with self.assertRaises(http.client.RemoteDisconnected):
+                Client(0).fetch("https://example.invalid/x")
+        self.assertEqual(urlopen.call_count, 3)
 
 
 if __name__ == "__main__":

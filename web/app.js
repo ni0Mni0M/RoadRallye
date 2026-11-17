@@ -1633,11 +1633,36 @@
     );
   }
 
+  const PLANE_ICON = whIcon(
+    '<path transform="scale(0.667)" stroke-width="2.1" d="M16 10h4a2 2 0 0 1 0 4h-4l-4 7h-3l2-7h-4l-2 2h-3l2-4l-2-4h3l2 2h4l-2-7h3z"/>'
+  );
+
+  // A tile that opens a flight search, shown when train and bus are a very long way home.
+  // `fastest` is the fastest connection, or null when there is none to judge by.
+  function flightHtml(end, home, fastest, date) {
+    const to = { ...home, country: stations.get(settings.home).country };
+    const flight = W.flightSearch(end, to, fastest, date, window.Airports);
+    if (!flight) return "";
+    const time = fastest && fmtDuration(fastest.durationMin);
+    const why = !fastest ? tr("flight.noConnection")
+      : fastest.transfers == null ? tr("flight.slow", { time })
+        : tr("flight.slowChanges", { time, n: fastest.transfers });
+    const route = tr("flight.route", { from: esc(flight.from.city), to: esc(flight.to.city), date: fmtDay(date) });
+    return (
+      `<a class="wh-flight" href="${flight.url}" target="_blank" rel="noopener">` +
+      `<span class="wh-flight-title">${PLANE_ICON}${tr("flight.title")}<span aria-hidden="true">↗</span></span>` +
+      `<span>${route}</span>` +
+      `<span class="wh-flight-why">${why}</span></a>`
+    );
+  }
+
   function transitHtml(end, home, est, live, chosen, date) {
     const mapsLink = extLink(W.googleMapsUrl(end, home, "transit"), "Google Maps");
     const estimate = tr("transit.estimate", { range: fmtRange(est.lowMin, est.highMin) });
     if (!live) return `<p class="wh-main">${tr("transit.looking")}</p>`;
     if (live.error || !live.options.length) {
+      // Without live times the estimate from the distance decides; with none found, a flight is the way.
+      const flight = flightHtml(end, home, live.error ? { durationMin: est.lowMin, transfers: null } : null, date);
       const why = live.error ? tr(TRANSIT_TROUBLE[live.reason] || TRANSIT_TROUBLE.upstream) : tr("transit.none");
       const retry = live.error && live.reason === "upstream"
         ? `<button type="button" class="wh-retry" data-mode="transit" data-retry="1">${tr("wh.retry")}</button>`
@@ -1645,10 +1670,16 @@
       return (
         `<p class="wh-main">${estimate}</p>` +
         `<p class="wh-detail">${why} ${tr("transit.rough")}</p>` +
+        flight +
         `<div class="wh-links">${retry}${mapsLink}</div>`
       );
     }
 
+    // The chosen tile also holds the button that slides out its details.
+    const details =
+      `<div class="wh-more"><button type="button" class="cost-toggle" data-wh-details aria-expanded="${whDetailsOpen}" aria-controls="whSteps">` +
+      `<span>${tr("transit.details")}</span><span class="cost-chevron" aria-hidden="true"></span></button>` +
+      `<div class="cost-slide${whDetailsOpen ? " open" : ""}" id="whSteps"><div>${stepsHtml(live.options[chosen], home)}</div></div></div>`;
     // The fastest connection comes first (W.pickConnections).
     const rows = live.options.map((o, i) => {
       const startDay = W.localDay(o.start, o.startTz);
@@ -1657,7 +1688,7 @@
       const nights = daysBetween(startDay, W.localDay(o.end, o.endTz));
       const changes = o.transfers === 0 ? tr("transit.direct") : tr("count.changes", { n: o.transfers });
       return (
-        `<li><button type="button" class="wh-option" data-itinerary="${i}" aria-pressed="${i === chosen}">` +
+        `<li${i === chosen ? ' class="chosen"' : ""}><button type="button" class="wh-option" data-itinerary="${i}" aria-pressed="${i === chosen}">` +
         `<span class="wh-day">${fmtDay(startDay)} · ${when}</span>` +
         `${i === 0 ? `<span class="wh-tag">${tr("transit.fastest")}</span>` : "<span></span>"}` +
         `<span class="wh-times">${fmtClock(o.start, o.startTz)} → ${fmtClock(o.end, o.endTz)}` +
@@ -1665,7 +1696,9 @@
         `<span class="wh-dur">${fmtDuration(o.durationMin)}</span>` +
         `<span class="wh-how">${vehiclesHtml(o.vehicles)} · ${changes}` +
         `${o.overnight ? ` · <span class="wh-night">${MOON_ICON}${tr("transit.overnight")}</span>` : ""}</span>` +
-        "</button></li>"
+        "</button>" +
+        (i === chosen ? details : "") +
+        "</li>"
       );
     });
     const until = new Date(`${date}T${settings.dropoffTime}:00`);
@@ -1676,10 +1709,8 @@
     const sources = `<a href="https://transitous.org/sources/" target="_blank" rel="noopener">${tr("transit.sources")}</a>`;
     return (
       `<p class="wh-main">${tr("transit.bestUntil", { day: untilDay, time })}</p>` +
+      flightHtml(end, home, live.options[0], date) +
       `<ol class="wh-options">${rows.join("")}</ol>` +
-      `<button type="button" class="cost-toggle" data-wh-details aria-expanded="${whDetailsOpen}" aria-controls="whSteps">` +
-      `<span>${tr("transit.details")}</span><span class="cost-chevron" aria-hidden="true"></span></button>` +
-      `<div class="cost-slide${whDetailsOpen ? " open" : ""}" id="whSteps"><div>${stepsHtml(live.options[chosen], home)}</div></div>` +
       `<p class="wh-detail">${tr("transit.searched", { n: SEARCH_DAYS * 24, time })}</p>` +
       `<div class="wh-links">${mapsLink}</div>` +
       `<p class="wh-credit">${tr("transit.credit", { link: transitous, sources })}</p>`

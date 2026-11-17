@@ -167,6 +167,44 @@ test("falls back to repeats when there is nothing else", () => {
   assert.deepEqual(W.pickConnections([]), []);
 });
 
+test("offers a flight only for a long way home abroad", () => {
+  const airports = require("../web/airports.js");
+  const madrid = { lat: 40.395, lon: -3.581, country: "ES" };
+  const berlin = { lat: 52.525, lon: 13.3694, country: "DE" };
+  const munich = { lat: 48.14, lon: 11.56, country: "DE" };
+  const prague = { lat: 50.083, lon: 14.435, country: "CZ" };
+  const long = { durationMin: 22 * 60, transfers: 8 };
+
+  const flight = W.flightSearch(madrid, berlin, long, "2026-11-28", airports);
+  assert.equal(flight.from.city, "Madrid");
+  assert.equal(flight.to.city, "Berlin");
+  assert.equal(flight.url, "https://www.skyscanner.net/transport/flights/mad/ber/261128/?adultsv2=1&currency=EUR");
+
+  // Over 10 hours, or 10 changes, or no connection at all.
+  assert.equal(W.flightSearch(madrid, berlin, { durationMin: 600, transfers: 3 }, "2026-11-28", airports), null);
+  assert.ok(W.flightSearch(madrid, berlin, { durationMin: 601, transfers: 0 }, "2026-11-28", airports));
+  assert.ok(W.flightSearch(madrid, berlin, { durationMin: 500, transfers: 10 }, "2026-11-28", airports));
+  assert.ok(W.flightSearch(madrid, berlin, null, "2026-11-28", airports));
+  // Never inside one country, however long the train takes.
+  assert.equal(W.flightSearch(munich, berlin, long, "2026-11-28", airports), null);
+  // Never under 500 km (Prague to Berlin is about 280).
+  assert.equal(W.flightSearch(prague, berlin, long, "2026-11-28", airports), null);
+  // No airport within reach of the start.
+  const nowhere = { lat: 46.5, lon: 2.5, country: "FR" };
+  assert.equal(W.flightSearch(nowhere, berlin, long, "2026-11-28", airports), null);
+  // A city with several airports uses Skyscanner's code for the whole city.
+  const paris = { lat: 48.86, lon: 2.35, country: "FR" };
+  assert.match(W.flightSearch(paris, berlin, long, "2026-11-28", airports).url, /\/pari\/ber\/261128\//);
+
+  const codes = new Set();
+  for (const a of airports) {
+    assert.match(a.code, /^[a-z]{3,4}$/);
+    assert.ok(a.city && Math.abs(a.lat) <= 90 && Math.abs(a.lon) <= 180, a.code);
+    codes.add(a.code);
+  }
+  assert.ok(codes.size > 100);
+});
+
 test("fuel cost", () => {
   assert.equal(W.fuelCost(472, 7, 1.8).toFixed(2), "59.47");
 });
