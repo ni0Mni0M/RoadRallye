@@ -217,6 +217,43 @@
     return [chosen[0], ...chosen.slice(1).sort(earlier)];
   }
 
+  const FLIGHT_OVER_MIN = 10 * 60; // train and bus take longer than this ...
+  const FLIGHT_FROM_CHANGES = 10; // ... or need this many changes
+  const FLIGHT_MIN_KM = 500; // no flights for shorter hops
+  const AIRPORT_MAX_KM = 150; // how far an airport may be from a station
+
+  function nearestAirport(point, airports) {
+    let best = null;
+    let bestKm = AIRPORT_MAX_KM;
+    for (const a of airports || []) {
+      const km = M.haversineKm(point, a);
+      if (km <= bestKm) [best, bestKm] = [a, km];
+    }
+    return best;
+  }
+
+  // Skyscanner puts the route and the day into the address: /flights/mad/ber/261128/
+  function skyscannerUrl(fromCode, toCode, day) {
+    const yymmdd = day.slice(2).replace(/-/g, "");
+    return `https://www.skyscanner.net/transport/flights/${fromCode}/${toCode}/${yymmdd}/?adultsv2=1&currency=EUR`;
+  }
+
+  /**
+   * A flight search for the way home, or null when flying makes no sense: inside one country,
+   * under 500 km, or when train and bus are good enough (at most 10 hours and fewer than 10
+   * changes). `fastest` is the fastest connection ({ durationMin, transfers }), or null when
+   * none was found. `from` and `to` need lat, lon and country; `day` is YYYY-MM-DD.
+   */
+  function flightSearch(from, to, fastest, day, airports) {
+    if (from.country && to.country && from.country === to.country) return null;
+    if (M.haversineKm(from, to) < FLIGHT_MIN_KM) return null;
+    if (fastest && fastest.durationMin <= FLIGHT_OVER_MIN && fastest.transfers < FLIGHT_FROM_CHANGES) return null;
+    const a = nearestAirport(from, airports);
+    const b = nearestAirport(to, airports);
+    if (!a || !b || a.code === b.code) return null;
+    return { from: a, to: b, url: skyscannerUrl(a.code, b.code, day) };
+  }
+
   function fuelCost(km, litresPer100Km, pricePerLitre) {
     return ((km * litresPer100Km) / 100) * pricePerLitre;
   }
@@ -236,6 +273,7 @@
     summarizeItinerary,
     connectionSteps,
     pickConnections,
+    flightSearch,
     fuelCost,
     googleMapsUrl,
   };

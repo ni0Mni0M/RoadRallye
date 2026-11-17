@@ -1613,11 +1613,35 @@
     );
   }
 
+  const PLANE_ICON = whIcon(
+    '<path transform="scale(0.667)" stroke-width="2.1" d="M16 10h4a2 2 0 0 1 0 4h-4l-4 7h-3l2-7h-4l-2 2h-3l2-4l-2-4h3l2 2h4l-2-7h3z"/>'
+  );
+
+  // A tile that opens a flight search, shown when train and bus are a very long way home.
+  // `fastest` is the fastest connection, or null when there is none to judge by.
+  function flightHtml(end, home, fastest, date) {
+    const to = { ...home, country: stations.get(settings.home).country };
+    const flight = W.flightSearch(end, to, fastest, date, window.Airports);
+    if (!flight) return "";
+    const why = fastest
+      ? `Train and bus take at least ${fmtDuration(fastest.durationMin)}` +
+        `${fastest.transfers == null ? "" : ` with ${plural(fastest.transfers, "change")}`}.`
+      : "No train or bus connection was found.";
+    return (
+      `<a class="wh-flight" href="${flight.url}" target="_blank" rel="noopener">` +
+      `<span class="wh-flight-title">${PLANE_ICON}Search for a flight<span aria-hidden="true">↗</span></span>` +
+      `<span>${esc(flight.from.city)} → ${esc(flight.to.city)} · ${fmtDay(date)} · one way, on Skyscanner</span>` +
+      `<span class="wh-flight-why">${why}</span></a>`
+    );
+  }
+
   function transitHtml(end, home, est, live, chosen, date) {
     const mapsLink = extLink(W.googleMapsUrl(end, home, "transit"), "Google Maps");
     const estimate = `About ${fmtRange(est.lowMin, est.highMin)} by train or bus`;
     if (!live) return '<p class="wh-main">Looking up connections…</p>';
     if (live.error || !live.options.length) {
+      // Without live times the estimate from the distance decides; with none found, a flight is the way.
+      const flight = flightHtml(end, home, live.error ? { durationMin: est.lowMin, transfers: null } : null, date);
       const why = live.error ? TRANSIT_TROUBLE[live.reason] || TRANSIT_TROUBLE.upstream : "No connections found in the two days after the drop-off.";
       const retry = live.error && live.reason === "upstream"
         ? '<button type="button" class="wh-retry" data-mode="transit" data-retry="1">Try again</button>'
@@ -1625,6 +1649,7 @@
       return (
         `<p class="wh-main">${estimate}</p>` +
         `<p class="wh-detail">${why} The time is a rough estimate from the distance.</p>` +
+        flight +
         `<div class="wh-links">${retry}${mapsLink}</div>`
       );
     }
@@ -1660,6 +1685,7 @@
     const untilDay = new Intl.DateTimeFormat("en-GB", { weekday: "short" }).format(until);
     return (
       `<p class="wh-main">Best connections until ${untilDay} ${esc(settings.dropoffTime)}</p>` +
+      flightHtml(end, home, live.options[0], date) +
       `<ol class="wh-options">${rows.join("")}</ol>` +
       `<p class="wh-detail">Searched ${SEARCH_DAYS * 24} hours after the ${esc(settings.dropoffTime)} drop-off. ` +
       "Pick one to see it on the map. Book the tickets with the train or bus company.</p>" +

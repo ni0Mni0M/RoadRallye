@@ -588,6 +588,26 @@ input[type="range"] { width: 100%; margin: 4px 0; accent-color: var(--text); }
 .wh-night .wh-icon { margin-right: 2px; }
 .wh-tag { justify-self: end; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 600; background: color-mix(in srgb, var(--out) 16%, transparent); color: var(--out); }
 
+/* "Search for a flight": a link tile above the connections when train and bus take very long */
+.wh-flight {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 8px;
+  padding: 7px 10px;
+  font-size: 12.5px;
+  color: var(--back);
+  text-decoration: none;
+  background: color-mix(in srgb, var(--back) 10%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--back) 45%, var(--panel));
+  border-radius: 8px;
+}
+.wh-flight:hover { border-color: var(--back); }
+.wh-flight-title { display: flex; align-items: center; font-size: 14px; font-weight: 600; }
+.wh-flight-title span { margin-left: auto; }
+.wh-flight-why { font-size: 12px; }
+.wh-flight + .wh-options { margin-top: 6px; }
+
 /* "Connection details": the chosen connection station by station (slides like the cost details) */
 .wh-steps { list-style: none; margin: 0; padding: 0; }
 .wh-stop { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 0 8px; color: var(--text); font-weight: 600; }
