@@ -1629,6 +1629,11 @@
       );
     }
 
+    // The chosen tile also holds the button that slides out its details.
+    const details =
+      `<div class="wh-more"><button type="button" class="cost-toggle" data-wh-details aria-expanded="${whDetailsOpen}" aria-controls="whSteps">` +
+      '<span>Connection details</span><span class="cost-chevron" aria-hidden="true"></span></button>' +
+      `<div class="cost-slide${whDetailsOpen ? " open" : ""}" id="whSteps"><div>${stepsHtml(live.options[chosen], home)}</div></div></div>`;
     // The fastest connection comes first (W.pickConnections).
     const rows = live.options.map((o, i) => {
       const startDay = W.localDay(o.start, o.startTz);
@@ -1637,7 +1642,7 @@
       const nights = daysBetween(startDay, W.localDay(o.end, o.endTz));
       const changes = o.transfers === 0 ? "direct" : plural(o.transfers, "change");
       return (
-        `<li><button type="button" class="wh-option" data-itinerary="${i}" aria-pressed="${i === chosen}">` +
+        `<li${i === chosen ? ' class="chosen"' : ""}><button type="button" class="wh-option" data-itinerary="${i}" aria-pressed="${i === chosen}">` +
         `<span class="wh-day">${fmtDay(startDay)} · ${when}</span>` +
         `${i === 0 ? '<span class="wh-tag">Fastest</span>' : "<span></span>"}` +
         `<span class="wh-times">${fmtClock(o.start, o.startTz)} → ${fmtClock(o.end, o.endTz)}` +
@@ -1645,7 +1650,9 @@
         `<span class="wh-dur">${fmtDuration(o.durationMin)}</span>` +
         `<span class="wh-how">${vehiclesHtml(o.vehicles)} · ${changes}` +
         `${o.overnight ? ` · <span class="wh-night">${MOON_ICON}overnight</span>` : ""}</span>` +
-        "</button></li>"
+        "</button>" +
+        (i === chosen ? details : "") +
+        "</li>"
       );
     });
     const until = new Date(`${date}T${settings.dropoffTime}:00`);
@@ -1654,9 +1661,6 @@
     return (
       `<p class="wh-main">Best connections until ${untilDay} ${esc(settings.dropoffTime)}</p>` +
       `<ol class="wh-options">${rows.join("")}</ol>` +
-      `<button type="button" class="cost-toggle" data-wh-details aria-expanded="${whDetailsOpen}" aria-controls="whSteps">` +
-      '<span>Connection details</span><span class="cost-chevron" aria-hidden="true"></span></button>' +
-      `<div class="cost-slide${whDetailsOpen ? " open" : ""}" id="whSteps"><div>${stepsHtml(live.options[chosen], home)}</div></div>` +
       `<p class="wh-detail">Searched ${SEARCH_DAYS * 24} hours after the ${esc(settings.dropoffTime)} drop-off. ` +
       "Pick one to see it on the map. Book the tickets with the train or bus company.</p>" +
       `<div class="wh-links">${mapsLink}</div>` +
