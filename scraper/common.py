@@ -1,5 +1,6 @@
 """Helpers shared by the rally sources."""
 
+import http.client
 import json
 import math
 import time
@@ -35,7 +36,10 @@ class Client:
                     return None
                 if attempt == retries - 1:
                     raise
-            except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+            # HTTPException and ConnectionError: the server dropped the connection without answering,
+            # which urllib passes on as it is, not as a URLError.
+            except (urllib.error.URLError, http.client.HTTPException, ConnectionError, TimeoutError,
+                    json.JSONDecodeError):
                 if attempt == retries - 1:
                     raise
             time.sleep(2 ** (attempt + 1))
