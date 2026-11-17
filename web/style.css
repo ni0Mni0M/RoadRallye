@@ -204,7 +204,7 @@ input[type="range"] { width: 100%; margin: 4px 0; accent-color: var(--text); }
   padding: 3px;
   gap: 3px;
   border-radius: 9px;
-  background: var(--soft);
+  background: var(--line);
 }
 
 .segmented label { position: relative; cursor: pointer; }
@@ -244,7 +244,6 @@ input[type="range"] { width: 100%; margin: 4px 0; accent-color: var(--text); }
 
 .type-switch svg { flex: none; }
 .type-switch path { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
-.type-switch input:checked + span { background: var(--text); color: var(--panel); box-shadow: none; }
 .trip-type .hint { margin-top: 8px; }
 
 .slider-out input[type="range"] { accent-color: var(--out); }
