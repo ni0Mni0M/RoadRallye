@@ -175,7 +175,8 @@
   "cost.withRally": "Com o rali",
   "cost.normalHead": "Aluguer normal (estimativa)",
   "cost.note": "Estimado a partir das suas definições: {day} por dia mais uma taxa de só ida de {fee}.",
-  "cost.noteEach": "Estimado a partir das suas definições: {day} por dia mais uma taxa de só ida de {fee} por cada rali.",
+  "cost.noteEach": "Estimado a partir das suas definições: {day} por dia mais uma taxa de só ida de {fee} por cada aluguer (uma espera ou um percurso de comboio inicia um novo).",
+  "cost.noteNone": "Estimado a partir das suas definições: {day} por dia. Sem taxa de só ida, porque a viagem termina onde começa.",
 
   // Ranking
   "rank.label": "Classificação",

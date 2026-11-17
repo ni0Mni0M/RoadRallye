@@ -174,7 +174,8 @@
   "cost.withRally": "Con el rally",
   "cost.normalHead": "Alquiler normal (estimación)",
   "cost.note": "Estimado según tus ajustes: {day} al día más un cargo por solo ida de {fee}.",
-  "cost.noteEach": "Estimado según tus ajustes: {day} al día más un cargo por solo ida de {fee} por cada rally.",
+  "cost.noteEach": "Estimado según tus ajustes: {day} al día más un cargo por solo ida de {fee} por cada alquiler (una espera o un trayecto en tren inicia uno nuevo).",
+  "cost.noteNone": "Estimado según tus ajustes: {day} al día. Sin cargo por solo ida, porque el viaje termina donde empieza.",
 
   // Ranking
   "rank.label": "Clasificación",

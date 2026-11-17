@@ -174,7 +174,8 @@
   "cost.withRally": "Avec le rally",
   "cost.normalHead": "Location normale (estimation)",
   "cost.note": "Estimé d'après vos réglages : {day} par jour plus {fee} de frais d'abandon.",
-  "cost.noteEach": "Estimé d'après vos réglages : {day} par jour plus {fee} de frais d'abandon par rally.",
+  "cost.noteEach": "Estimé d'après vos réglages : {day} par jour plus {fee} de frais d'abandon par location (une attente ou un trajet en train en commence une nouvelle).",
+  "cost.noteNone": "Estimé d'après vos réglages : {day} par jour. Pas de frais d'abandon, car le voyage se termine là où il commence.",
 
   // Ranking
   "rank.label": "Classement",

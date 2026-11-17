@@ -174,7 +174,8 @@
   "cost.withRally": "Met de rally",
   "cost.normalHead": "Normale huur (schatting)",
   "cost.note": "Geschat op basis van je instellingen: {day} per dag plus {fee} toeslag voor een enkele reis.",
-  "cost.noteEach": "Geschat op basis van je instellingen: {day} per dag plus {fee} toeslag voor een enkele reis per rally.",
+  "cost.noteEach": "Geschat op basis van je instellingen: {day} per dag plus {fee} toeslag voor een enkele reis per huurperiode (na een wachttijd of treinrit begint een nieuwe).",
+  "cost.noteNone": "Geschat op basis van je instellingen: {day} per dag. Geen toeslag voor een enkele reis, omdat de reis eindigt waar hij begint.",
 
   // Ranking
   "rank.label": "Ranglijst",

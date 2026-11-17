@@ -187,7 +187,8 @@
   "cost.withRally": "Z rajdem",
   "cost.normalHead": "Zwykły wynajem (szacunek)",
   "cost.note": "Szacunek z twoich ustawień: {day} za dzień plus {fee} za zwrot w innym miejscu.",
-  "cost.noteEach": "Szacunek z twoich ustawień: {day} za dzień plus {fee} za zwrot w innym miejscu za każdy rajd.",
+  "cost.noteEach": "Szacunek z twoich ustawień: {day} za dzień plus {fee} za zwrot w innym miejscu za każdy wynajem (po przerwie lub przejeździe pociągiem zaczyna się nowy).",
+  "cost.noteNone": "Szacunek z twoich ustawień: {day} za dzień. Bez opłaty za zwrot w innym miejscu, bo podróż kończy się tam, gdzie się zaczyna.",
 
   // Ranking
   "rank.label": "Ranking",

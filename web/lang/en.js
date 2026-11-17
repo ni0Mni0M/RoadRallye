@@ -176,7 +176,8 @@
   "cost.withRally": "With the rally",
   "cost.normalHead": "Normal rental (estimate)",
   "cost.note": "Estimated from your settings: {day} a day plus a {fee} one-way fee.",
-  "cost.noteEach": "Estimated from your settings: {day} a day plus a {fee} one-way fee for each rally.",
+  "cost.noteEach": "Estimated from your settings: {day} a day plus a {fee} one-way fee for each rental (a wait or a train hop starts a new one).",
+  "cost.noteNone": "Estimated from your settings: {day} a day. No one-way fee, because the trip ends where it starts.",
 
   // Ranking
   "rank.label": "Rank",

@@ -174,7 +174,8 @@
   "cost.withRally": "Mit der Rally",
   "cost.normalHead": "Normale Miete (Schätzung)",
   "cost.note": "Geschätzt aus deinen Einstellungen: {day} pro Tag plus {fee} Einweggebühr.",
-  "cost.noteEach": "Geschätzt aus deinen Einstellungen: {day} pro Tag plus {fee} Einweggebühr pro Rally.",
+  "cost.noteEach": "Geschätzt aus deinen Einstellungen: {day} pro Tag plus {fee} Einweggebühr pro Miete (nach einer Wartezeit oder Zugfahrt beginnt eine neue).",
+  "cost.noteNone": "Geschätzt aus deinen Einstellungen: {day} pro Tag. Keine Einweggebühr, weil die Reise dort endet, wo sie beginnt.",
 
   // Ranking
   "rank.label": "Rangliste",

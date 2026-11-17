@@ -190,11 +190,43 @@ test("a listed price is kept apart from the rally fee in the rent", () => {
   assert.deepEqual(f.costParts, { feeLegs: 1, feeDays: 7, listedLegs: 1, listedRent: 50 });
 });
 
-test("a normal rental is a price per day plus a one-way fee for each rally", () => {
+test("a normal rental is a price per day plus one one-way fee for rallies driven back to back", () => {
+  // Berlin-Schönefeld → Madrid → Berlin, switching vans the same day: one rental that ends elsewhere.
   const f = R.tripFacts(madridHome(), { stations, routes, costs: { ...costs, normalDayPrice: 90, oneWayFee: 250 } });
-  // 2 rallies of 7 days: 14 × 90 + 2 × 250 + the same insurance, against 2 × (129 + 105) with the rallies
-  assert.equal(f.normalRent, 14 * 90 + 2 * 250 + 14 * 15);
-  assert.equal(f.saving, 1760 - 2 * 129);
+  // 2 rallies of 7 days: 14 × 90 + 250 + the same insurance, against 2 × (129 + 105) with the rallies
+  assert.equal(f.oneWayFees, 1);
+  assert.equal(f.normalRent, 14 * 90 + 250 + 14 * 15);
+  assert.equal(f.saving, 14 * 90 + 250 - 2 * 129);
+});
+
+test("one-way fees: none back at the start, else one per stretch without a break", () => {
+  const leg = (from, to, pickup, ret) => ({ from, to, pickup, return: ret });
+  const out = leg(6, 20, "2026-11-03", "2026-11-10");
+  // A single rally is one rental that ends elsewhere.
+  assert.equal(R.oneWayFees([out]), 1);
+  // Back at the station it started from: a return rental, even after waiting days.
+  assert.equal(R.oneWayFees([out, leg(20, 6, "2026-11-10", "2026-11-17")]), 0);
+  assert.equal(R.oneWayFees([out, leg(20, 6, "2026-11-12", "2026-11-19")]), 0);
+  // Ends elsewhere: the same van when the next rally starts the day the last one ends...
+  assert.equal(R.oneWayFees([out, leg(20, 22, "2026-11-10", "2026-11-17")]), 1);
+  // ...but a wait or a train hop means handing it back and renting again.
+  assert.equal(R.oneWayFees([out, leg(20, 22, "2026-11-12", "2026-11-19")]), 2);
+  assert.equal(R.oneWayFees([out, leg(17, 22, "2026-11-10", "2026-11-17")]), 2);
+  // Three rallies with one break: two rentals.
+  assert.equal(
+    R.oneWayFees([out, leg(20, 17, "2026-11-10", "2026-11-13"), leg(17, 22, "2026-11-14", "2026-11-20")]),
+    2
+  );
+});
+
+test("a trip that ends where it starts has no one-way fee in the normal rental", () => {
+  const legs = [
+    { from: 6, to: 47, pickup: "2026-11-07", return: "2026-11-14" },
+    { from: 47, to: 6, pickup: "2026-11-14", return: "2026-11-21" },
+  ];
+  const f = R.tripFacts({ legs, totalDays: 14 }, { stations, routes, costs: { ...costs, insurancePerDay: 0, normalDayPrice: 90, oneWayFee: 250 } });
+  assert.equal(f.oneWayFees, 0);
+  assert.equal(f.normalRent, 14 * 90);
 });
 
 test("insurance is on both sides of the comparison, so leaving it out keeps the saving", () => {
@@ -202,7 +234,7 @@ test("insurance is on both sides of the comparison, so leaving it out keeps the 
   const withCover = R.tripFacts(madridHome(), { stations, routes, costs: { ...costs, ...normal } });
   const without = R.tripFacts(madridHome(), { stations, routes, costs: { ...costs, ...normal, insurancePerDay: 0 } });
   assert.equal(without.rent, 2 * 129);
-  assert.equal(without.normalRent, 14 * 90 + 2 * 250);
+  assert.equal(without.normalRent, 14 * 90 + 250);
   assert.equal(without.saving, withCover.saving);
 });
 

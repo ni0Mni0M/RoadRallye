@@ -174,7 +174,8 @@
   "cost.withRally": "Con il rally",
   "cost.normalHead": "Noleggio normale (stima)",
   "cost.note": "Stimato dalle tue impostazioni: {day} al giorno più un supplemento sola andata di {fee}.",
-  "cost.noteEach": "Stimato dalle tue impostazioni: {day} al giorno più un supplemento sola andata di {fee} per ogni rally.",
+  "cost.noteEach": "Stimato dalle tue impostazioni: {day} al giorno più un supplemento sola andata di {fee} per ogni noleggio (un'attesa o un tratto in treno ne inizia uno nuovo).",
+  "cost.noteNone": "Stimato dalle tue impostazioni: {day} al giorno. Nessun supplemento sola andata, perché il viaggio finisce dove inizia.",
 
   // Ranking
   "rank.label": "Classifica",

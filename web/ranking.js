@@ -57,6 +57,18 @@
     return stops;
   }
 
+  // How many one-way fees the same trip would cost as normal rentals. None when it ends at the
+  // station it started from (one return rental). Otherwise one for each stretch of rallies driven
+  // back to back: you would keep the same van until a wait or a train hop makes you hand it back.
+  function oneWayFees(legs) {
+    if (legs[legs.length - 1].to === legs[0].from) return 0;
+    let fees = 1;
+    for (let i = 1; i < legs.length; i++) {
+      if (legs[i].from !== legs[i - 1].to || legs[i].pickup > legs[i - 1].return) fees += 1;
+    }
+    return fees;
+  }
+
   /**
    * Facts about one trip that need more than the rally list.
    * ctx: { stations: Map, routes: { "a-b": info } | null,
@@ -65,8 +77,8 @@
    * priceEur(leg) is the leg's listed price in euros (Imoova), or null to use roadsurfer's rally fee
    * and insurance instead.
    * cost = rent + fuel. normalRent is a rough guess at the same rallies as ordinary one-way rentals
-   * (a flat price per day plus a one-way fee per rally, with the same insurance), or null when those
-   * two aren't given;
+   * (a flat price per day plus `oneWayFees` one-way fees, with the same insurance), or null when
+   * those two aren't given;
    * saving is how much less the rally rent is. costParts is what the rent is made of.
    * Besides the totals it returns `legs` (what each rally drives through, for "Along the way") and
    * `sites` (the parks and World Heritage sites with a position, for the map).
@@ -76,7 +88,8 @@
     let rallyDays = 0;
     let rent = 0;
     let fuel = 0;
-    let normalRent = 0;
+    const fees = oneWayFees(t.legs);
+    let normalRent = fees * ctx.costs.oneWayFee;
     // feeLegs/feeDays: rallies paid with the rally fee and insurance; listed: those with a listed price.
     const costParts = { feeLegs: 0, feeDays: 0, listedLegs: 0, listedRent: 0 };
     const hasNormal = typeof ctx.costs.normalDayPrice === "number" && typeof ctx.costs.oneWayFee === "number";
@@ -120,7 +133,7 @@
       }
       fuel += ((km * ctx.costs.vanLitresPer100Km) / 100) * ctx.costs.fuelPrice;
       // The same cover would cost the same on a normal rental, so it never changes the saving.
-      if (hasNormal) normalRent += ctx.costs.normalDayPrice * days + ctx.costs.oneWayFee + insurance;
+      if (hasNormal) normalRent += ctx.costs.normalDayPrice * days + insurance;
       // Route info is stored in the direction from the lower to the higher id.
       const legCountries = info ? (idBefore(leg.from, leg.to) ? info.countries : [...info.countries].reverse()) : [];
       if (info) {
@@ -164,6 +177,7 @@
       rent,
       fuel,
       costParts,
+      oneWayFees: fees,
       normalRent: hasNormal ? normalRent : null,
       saving: hasNormal ? normalRent - rent : null,
       costPerDay: cost / Math.max(1, t.totalDays),
@@ -321,7 +335,7 @@
   }
 
   return {
-    METRICS, SCENIC_WEIGHTS, FRESH_DAYS, routeKey, metricApplies, stopsOf, tripFacts, rankStations, percentiles,
+    METRICS, SCENIC_WEIGHTS, FRESH_DAYS, routeKey, metricApplies, stopsOf, oneWayFees, tripFacts, rankStations, percentiles,
     freshSince, weatherFor,
   };
 });

@@ -752,15 +752,14 @@
     }
     rally.push(row(tr("cost.total"), `≈ ${euros(f.cost)}`, " cost-sum"));
 
-    const n = t.legs.length;
+    // One-way fees: none for a trip that ends where it starts, else one per stretch without a break.
+    const n = f.oneWayFees;
     const normalCost = f.normalRent + f.fuel;
     const rent = tr("cost.rent", { days: tr("count.days", { n: f.rallyDays }), price: euros(settings.normalDayPrice) });
     const oneWayFee = n > 1 ? tr("cost.oneWayFeeTimes", { times: times(n, settings.oneWayFee) }) : tr("cost.oneWayFee");
-    const normal = [
-      row(rent, euros(f.rallyDays * settings.normalDayPrice)),
-      row(oneWayFee, euros(n * settings.oneWayFee)),
-      row(tr("cost.fuelSame"), euros(f.fuel)),
-    ];
+    const normal = [row(rent, euros(f.rallyDays * settings.normalDayPrice))];
+    if (n) normal.push(row(oneWayFee, euros(n * settings.oneWayFee)));
+    normal.push(row(tr("cost.fuelSame"), euros(f.fuel)));
     if (insurance && insured) normal.push(row(tr("cost.insuranceSame"), euros(insurance)));
     normal.push(row(tr("cost.total"), `≈ ${euros(normalCost)}`, " cost-sum"));
     const saves = f.saving > 0;
@@ -769,7 +768,7 @@
       ? row(tr("cost.youSave"), `≈ ${euros(f.saving)} (${share})`, " cost-save")
       : row(tr("cost.costsMore"), `≈ ${euros(-f.saving)}`);
     const id = `costs-${esc(t.id)}`;
-    const note = tr(n > 1 ? "cost.noteEach" : "cost.note", { day: euros(settings.normalDayPrice), fee: euros(settings.oneWayFee) });
+    const note = tr(n > 1 ? "cost.noteEach" : n ? "cost.note" : "cost.noteNone", { day: euros(settings.normalDayPrice), fee: euros(settings.oneWayFee) });
 
     return (
       `<p class="facts" title="${esc(tr(insured ? "cost.summaryTitleInsured" : "cost.summaryTitle", { distance: dist }))}">` +
