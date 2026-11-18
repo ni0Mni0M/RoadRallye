@@ -20,6 +20,7 @@
   "data.noneHelp": "Starte {script} (oder {command}), um die aktuellen Rallys herunterzuladen, und lade die Seite dann neu.",
   "data.count.roadsurfer": { one: "{n} roadsurfer-Rally", other: "{n} roadsurfer-Rallys" },
   "data.count.imoova": { one: "{n} Imoova-Überführung", other: "{n} Imoova-Überführungen" },
+  "data.count.movacar": { one: "{n} Movacar-Überführung", other: "{n} Movacar-Überführungen" },
   "data.count.other": "{n} von {provider}",
   "data.updated": "aktualisiert {when}",
   "data.daysOld": { one: "{n} Tag alt", other: "{n} Tage alt" },
@@ -29,6 +30,7 @@
   "data.runUpdate": "Starte update-data.bat für aktuelle Rallys.",
   "provider.roadsurfer": "Rallys, meist ab {price}",
   "provider.imoova": "Viele Vermieter, {price} pro Tag plus Buchungsgebühr",
+  "provider.movacar": "Viele Vermieter, ab {price}",
   "price.ecb": "{price} zum EZB-Kurs vom {date}",
 
   // Units
@@ -82,7 +84,7 @@
   "costs.fuelPrice": "Spritpreis (€/l)",
   "costs.normalDay": "Normale Miete (€ pro Tag)",
   "costs.oneWayFee": "Einweggebühr (€)",
-  "costs.hint": "Rally-Gebühr und Versicherung sind die von roadsurfer; Imoova-Etappen kosten ihren angegebenen Preis. Dazu kommt Diesel für den Camper, ohne Maut. Die Versicherung zählt erst, wenn du sie in den Kostendetails eines Trips ankreuzt. Die normale Miete und ihre Einweggebühr sind grobe Schätzungen, um abzuschätzen, was eine Rally spart.",
+  "costs.hint": "Rally-Gebühr und Versicherung sind die von roadsurfer; Imoova- und Movacar-Etappen kosten ihren angegebenen Preis. Dazu kommt Diesel für den Camper, ohne Maut. Die Versicherung zählt erst, wenn du sie in den Kostendetails eines Trips ankreuzt. Die normale Miete und ihre Einweggebühr sind grobe Schätzungen, um abzuschätzen, was eine Rally spart.",
 
   // Way home settings
   "wayhome.legend": "Heimweg",

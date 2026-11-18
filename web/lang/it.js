@@ -20,6 +20,7 @@
   "data.noneHelp": "Esegui {script} (o {command}) per scaricare i rally attuali, poi ricarica questa pagina.",
   "data.count.roadsurfer": { one: "{n} rally roadsurfer", other: "{n} rally roadsurfer" },
   "data.count.imoova": { one: "{n} trasferimento Imoova", other: "{n} trasferimenti Imoova" },
+  "data.count.movacar": { one: "{n} trasferimento Movacar", other: "{n} trasferimenti Movacar" },
   "data.count.other": "{n} da {provider}",
   "data.updated": "aggiornato il {when}",
   "data.daysOld": { one: "vecchi di {n} giorno", other: "vecchi di {n} giorni" },
@@ -29,6 +30,7 @@
   "data.runUpdate": "Esegui update-data.bat per avere rally aggiornati.",
   "provider.roadsurfer": "Rally, di solito da {price}",
   "provider.imoova": "Molte società di noleggio, {price} al giorno più una commissione di prenotazione",
+  "provider.movacar": "Molte società di noleggio, da {price}",
   "price.ecb": "{price} al cambio BCE del {date}",
 
   // Units
@@ -82,7 +84,7 @@
   "costs.fuelPrice": "Prezzo del carburante (€/l)",
   "costs.normalDay": "Noleggio normale (€ al giorno)",
   "costs.oneWayFee": "Supplemento sola andata (€)",
-  "costs.hint": "Tariffa del rally e assicurazione sono quelle di roadsurfer; le tappe Imoova costano il loro prezzo indicato. In più il gasolio per il van, senza pedaggi. L'assicurazione conta solo quando la spunti nei dettagli dei costi di un viaggio. Il noleggio normale e il suo supplemento sola andata sono stime approssimative, per valutare quanto fa risparmiare un rally.",
+  "costs.hint": "Tariffa del rally e assicurazione sono quelle di roadsurfer; le tappe Imoova e Movacar costano il loro prezzo indicato. In più il gasolio per il van, senza pedaggi. L'assicurazione conta solo quando la spunti nei dettagli dei costi di un viaggio. Il noleggio normale e il suo supplemento sola andata sono stime approssimative, per valutare quanto fa risparmiare un rally.",
 
   // Way home settings
   "wayhome.legend": "Ritorno a casa",

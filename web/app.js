@@ -15,7 +15,8 @@
   const STORAGE_KEY = "rally-finder-settings-v1";
   const PERSONAL_KEY = "rally-finder-personal-v1";
   const PAGE_SIZE = 100;
-  // Where each provider's rallies are booked. Stations saved before Imoova was added have no provider: roadsurfer.
+  // Where each provider's rallies are booked: book(rally, its start station, its end station).
+  // Stations saved before Imoova was added have no provider: roadsurfer.
   const PROVIDERS = {
     roadsurfer: {
       name: "roadsurfer",
@@ -28,6 +29,13 @@
       name: "Imoova",
       note: () => tr("provider.imoova", { price: euros(1) }),
       book: (r) => `https://www.imoova.com/en/relocations/${encodeURIComponent(r.ref)}`,
+    },
+    movacar: {
+      name: "Movacar",
+      note: () => tr("provider.movacar", { price: euros(1) }),
+      // Movacar has no page for one offer without logging in: this lists the route's offers, in the visitor's language.
+      book: (r, from, to) =>
+        `https://www.movacar.com/offers/${encodeURIComponent(from.city || from.name)}/${encodeURIComponent(to.city || to.name)}`,
     },
   };
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -640,6 +648,7 @@
   }
 
   // Imoova prices are the booking fee plus the daily rate for the free days; fuel, bond and extra days come on top.
+  // Movacar prices are the rent for the included days; fuel, extra days and extra km come on top.
   function legHtml(kind, r) {
     const a = stations.get(r.from);
     const b = stations.get(r.to);
@@ -650,7 +659,7 @@
       (typeof r.price === "number" ? ` · ${priceHtml(r)}` : "");
     const bookLabel = tr("leg.bookLabel", { from: a.name, to: b.name, provider: providerName(p) });
     const book = PROVIDERS[p]
-      ? `<a class="book" href="${esc(PROVIDERS[p].book(r))}" target="_blank" rel="noopener" ` +
+      ? `<a class="book" href="${esc(PROVIDERS[p].book(r, a, b))}" target="_blank" rel="noopener" ` +
         `aria-label="${esc(bookLabel)}">${esc(tr("leg.book"))} ↗</a>`
       : "";
     return (

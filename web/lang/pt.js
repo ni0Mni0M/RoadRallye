@@ -21,6 +21,7 @@
   "data.noneHelp": "Execute {script} (ou {command}) para descarregar os ralis atuais e depois recarregue esta página.",
   "data.count.roadsurfer": { one: "{n} rali roadsurfer", other: "{n} ralis roadsurfer" },
   "data.count.imoova": { one: "{n} relocalização Imoova", other: "{n} relocalizações Imoova" },
+  "data.count.movacar": { one: "{n} relocalização Movacar", other: "{n} relocalizações Movacar" },
   "data.count.other": "{n} de {provider}",
   "data.updated": "atualizado a {when}",
   "data.daysOld": { one: "de há {n} dia", other: "de há {n} dias" },
@@ -30,6 +31,7 @@
   "data.runUpdate": "Execute update-data.bat para ter ralis atualizados.",
   "provider.roadsurfer": "Ralis, normalmente a partir de {price}",
   "provider.imoova": "Muitas empresas de aluguer, {price} por dia mais uma taxa de reserva",
+  "provider.movacar": "Muitas empresas de aluguer, desde {price}",
   "price.ecb": "{price} à taxa do BCE de {date}",
 
   // Units
@@ -83,7 +85,7 @@
   "costs.fuelPrice": "Preço do combustível (€/l)",
   "costs.normalDay": "Aluguer normal (€ por dia)",
   "costs.oneWayFee": "Taxa de só ida (€)",
-  "costs.hint": "A taxa do rali e o seguro são os da roadsurfer; as etapas Imoova custam o preço indicado. A isto junta-se o gasóleo da autocaravana, sem portagens. O seguro só conta quando o marca no detalhe de custos de uma viagem. O aluguer normal e a sua taxa de só ida são estimativas aproximadas, para avaliar quanto poupa um rali.",
+  "costs.hint": "A taxa do rali e o seguro são os da roadsurfer; as etapas Imoova e Movacar custam o preço indicado. A isto junta-se o gasóleo da autocaravana, sem portagens. O seguro só conta quando o marca no detalhe de custos de uma viagem. O aluguer normal e a sua taxa de só ida são estimativas aproximadas, para avaliar quanto poupa um rali.",
 
   // Way home settings
   "wayhome.legend": "Regresso a casa",

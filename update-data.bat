@@ -1,5 +1,5 @@
 @echo off
-rem Downloads the current roadsurfer rallies and Imoova relocations into web\data (takes about 4-5 minutes),
+rem Downloads the current roadsurfer rallies and Imoova and Movacar relocations into web\data (takes about 6-7 minutes),
 rem then the route and weather data the destinations ranking needs.
 rem Pass /nopause when running it from Task Scheduler.
 cd /d "%~dp0"

@@ -22,6 +22,7 @@
   "data.noneHelp": "Run {script} (or {command}) to download the current rallies, then reload this page.",
   "data.count.roadsurfer": { one: "{n} roadsurfer rally", other: "{n} roadsurfer rallies" },
   "data.count.imoova": { one: "{n} Imoova relocation", other: "{n} Imoova relocations" },
+  "data.count.movacar": { one: "{n} Movacar relocation", other: "{n} Movacar relocations" },
   "data.count.other": "{n} from {provider}",
   "data.updated": "updated {when}",
   "data.daysOld": { one: "{n} day old", other: "{n} days old" },
@@ -31,6 +32,7 @@
   "data.runUpdate": "Run update-data.bat for fresh rallies.",
   "provider.roadsurfer": "Rallies, usually from {price}",
   "provider.imoova": "Many rental companies, {price} a day plus a booking fee",
+  "provider.movacar": "Many rental companies, from {price}",
   "price.ecb": "{price} at the ECB rate of {date}",
 
   // Units
@@ -84,7 +86,7 @@
   "costs.fuelPrice": "Fuel price (€/l)",
   "costs.normalDay": "Normal rental (€ a day)",
   "costs.oneWayFee": "One-way fee (€)",
-  "costs.hint": "Rally fee and insurance are roadsurfer's; Imoova legs use their listed price. Plus diesel for the van, no tolls. Insurance only counts once you tick it in a trip's cost details. The normal rental and its one-way fee are rough guesses, used to estimate what a rally saves.",
+  "costs.hint": "Rally fee and insurance are roadsurfer's; Imoova and Movacar legs use their listed price. Plus diesel for the van, no tolls. Insurance only counts once you tick it in a trip's cost details. The normal rental and its one-way fee are rough guesses, used to estimate what a rally saves.",
 
   // Way home settings
   "wayhome.legend": "Way home",

@@ -23,6 +23,7 @@
   "data.noneHelp": "Uruchom {script} (lub {command}), aby pobrać aktualne rajdy, a potem odśwież stronę.",
   "data.count.roadsurfer": { one: "{n} rajd roadsurfer", few: "{n} rajdy roadsurfer", many: "{n} rajdów roadsurfer", other: "{n} rajdu roadsurfer" },
   "data.count.imoova": { one: "{n} relokacja Imoova", few: "{n} relokacje Imoova", many: "{n} relokacji Imoova", other: "{n} relokacji Imoova" },
+  "data.count.movacar": { one: "{n} relokacja Movacar", few: "{n} relokacje Movacar", many: "{n} relokacji Movacar", other: "{n} relokacji Movacar" },
   "data.count.other": "{provider}: {n}",
   "data.updated": "aktualizacja {when}",
   "data.daysOld": { one: "{n} dzień", few: "{n} dni", many: "{n} dni", other: "{n} dnia" },
@@ -32,6 +33,7 @@
   "data.runUpdate": "Uruchom update-data.bat, aby pobrać aktualne rajdy.",
   "provider.roadsurfer": "Rajdy, zwykle od {price}",
   "provider.imoova": "Wiele wypożyczalni, {price} za dzień plus opłata rezerwacyjna",
+  "provider.movacar": "Wiele wypożyczalni, od {price}",
   "price.ecb": "{price} po kursie EBC z {date}",
 
   // Units
@@ -85,7 +87,7 @@
   "costs.fuelPrice": "Cena paliwa (€/l)",
   "costs.normalDay": "Zwykły wynajem (€ za dzień)",
   "costs.oneWayFee": "Opłata za zwrot w innym miejscu (€)",
-  "costs.hint": "Opłata za rajd i ubezpieczenie to stawki roadsurfer; etapy Imoova kosztują tyle, ile podana cena. Do tego olej napędowy dla kampera, bez opłat drogowych. Ubezpieczenie liczy się dopiero, gdy zaznaczysz je w szczegółach kosztów podróży. Zwykły wynajem i opłata za zwrot w innym miejscu to zgrubne szacunki, by ocenić, ile oszczędza rajd.",
+  "costs.hint": "Opłata za rajd i ubezpieczenie to stawki roadsurfer; etapy Imoova i Movacar kosztują tyle, ile podana cena. Do tego olej napędowy dla kampera, bez opłat drogowych. Ubezpieczenie liczy się dopiero, gdy zaznaczysz je w szczegółach kosztów podróży. Zwykły wynajem i opłata za zwrot w innym miejscu to zgrubne szacunki, by ocenić, ile oszczędza rajd.",
 
   // Way home settings
   "wayhome.legend": "Powrót do domu",

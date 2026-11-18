@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Fetch every one-way relocation offer (roadsurfer rallies, Imoova relocations) and save it for the web page.
+"""Fetch every one-way relocation offer (roadsurfer rallies, Imoova and Movacar relocations) and save it for the web page.
 
-Each source is fetched on its own (see roadsurfer.py and imoova.py). When one fails, its offers from the
+Each source is fetched on its own (see roadsurfer.py, imoova.py and movacar.py). When one fails, its offers from the
 last run are kept and marked as old, so one broken source never empties the page.
 
 Only the Python standard library is used, so no pip install is needed.
@@ -16,6 +16,7 @@ from pathlib import Path
 
 import history
 import imoova
+import movacar
 import progress
 import roadsurfer
 from common import Client, haversine_km
@@ -23,8 +24,9 @@ from rates import fetch_rates
 
 DEFAULT_OUT = Path(__file__).resolve().parent.parent / "web" / "data"
 DEFAULT_HISTORY = Path(__file__).resolve().parent.parent / "history" / "rallies.csv"
-SOURCES = ["roadsurfer", "imoova"]
-LABELS = {"roadsurfer": ("roadsurfer", "rallies"), "imoova": ("Imoova", "relocations")}  # bar label, what it counts
+SOURCES = ["roadsurfer", "imoova", "movacar"]
+# bar label, what it counts
+LABELS = {"roadsurfer": ("roadsurfer", "rallies"), "imoova": ("Imoova", "relocations"), "movacar": ("Movacar", "relocations")}
 
 # A roadsurfer van on Imoova is the same offer as a rally when both ends are this close to the rally's
 # stations. Looser than SAME_PLACE_KM in web/matching.js: roadsurfer's "Dallas" is in Fort Worth.
@@ -34,6 +36,8 @@ SAME_ROUTE_KM = 60
 def fetch_source(name, client, args, log, bar=None):
     if name == "roadsurfer":
         return roadsurfer.fetch_all(client, log, args.locale, bar)
+    if name == "movacar":
+        return movacar.fetch_all(client, log, bar)
     return imoova.fetch_all(client, log, bar)
 
 
@@ -85,6 +89,41 @@ def drop_known_rallies(imoova_part, roadsurfer_part):
     rallies = [r for r in imoova_part["rallies"] if r.get("ref") not in known]
     used = {r["from"] for r in rallies} | {r["to"] for r in rallies}
     return {**imoova_part, "rallies": rallies, "stations": [s for s in imoova_part["stations"] if s["id"] in used]}
+
+
+def drop_listed_rallies(movacar_part, roadsurfer_part):
+    """Drop roadsurfer vans listed on Movacar that are a rally roadsurfer lists itself: the same days,
+    between the same two places. Most of Movacar's offers are, and the rally is booked without a middleman."""
+    if not movacar_part or not roadsurfer_part:
+        return movacar_part
+    rs = {s["id"]: s for s in roadsurfer_part["stations"]}
+    mv = {s["id"]: s for s in movacar_part["stations"]}
+    by_days = {}  # (pickup, return) -> roadsurfer's routes on those days
+    for x in roadsurfer_part["rallies"]:
+        if x["from"] in rs and x["to"] in rs:
+            by_days.setdefault((x["pickup"], x["return"]), set()).add((x["from"], x["to"]))
+
+    def listed(r):
+        return r.get("supplier") == "roadsurfer" and any(
+            haversine_km(mv[r["from"]], rs[frm]) <= SAME_ROUTE_KM and haversine_km(mv[r["to"]], rs[to]) <= SAME_ROUTE_KM
+            for frm, to in by_days.get((r["pickup"], r["return"]), ())
+        )
+
+    rallies = [r for r in movacar_part["rallies"] if not listed(r)]
+    used = {r["from"] for r in rallies} | {r["to"] for r in rallies}
+    return {**movacar_part, "rallies": rallies, "stations": [s for s in movacar_part["stations"] if s["id"] in used]}
+
+
+def fill_countries(part, others):
+    """Give the stations that came without a country (Movacar's) the country of the nearest station
+    in `others`, when there is one within SAME_ROUTE_KM. The rest stay without."""
+    known = [s for s in others if s.get("country")]
+    for s in part["stations"]:
+        if s.get("country") or not known:
+            continue
+        nearest = min(known, key=lambda k: haversine_km(s, k))
+        if haversine_km(s, nearest) <= SAME_ROUTE_KM:
+            s["country"] = nearest["country"]
 
 
 def carry_first_seen(data, previous):
@@ -153,6 +192,10 @@ def main():
 
     if "imoova" in parts:
         parts["imoova"] = drop_known_rallies(parts["imoova"], parts.get("roadsurfer"))
+    if "movacar" in parts:
+        # Countries first, from every station the other sources fetched, also those that go unused.
+        fill_countries(parts["movacar"], [s for name, part in parts.items() if name != "movacar" for s in part["stations"]])
+        parts["movacar"] = drop_listed_rallies(parts["movacar"], parts.get("roadsurfer"))
 
     sources = {
         name: {k: part[k] for k in ("fetched_at", "error", "failed_routes") if part.get(k) is not None}

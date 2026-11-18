@@ -1,6 +1,6 @@
 # Rally trips
 
-Finds trips made of one-way relocation rentals ("rallies") from roadsurfer and Imoova, and shows
+Finds trips made of one-way relocation rentals ("rallies") from roadsurfer, Imoova and Movacar, and shows
 them on a web page with a map that animates each trip. There are two kinds of trip:
 
 - **One-way** (the default): one rally from near home to somewhere else, or a chain of up to three
@@ -11,7 +11,7 @@ them on a web page with a map that animates each trip. There are two kinds of tr
 ## Use it
 
 1. **Get fresh data:** double-click `update-data.bat`. It downloads every current rally
-   (about 4–5 minutes, a few hundred small requests at a slow pace) into `web/data/`.
+   (about 6–7 minutes, a few hundred small requests at a slow pace) into `web/data/`.
    `python scraper\fetch_rallies.py --source imoova` updates only one source (seconds for Imoova).
 2. **Open the site:** double-click `open-site.bat`. It starts a small local web server and opens
    <http://localhost:8765>. Close the black window to stop it.
@@ -30,9 +30,9 @@ but the map background may stay blank because OpenStreetMap only serves tiles to
 | Earliest pickup / Back by | The whole trip must fit between these dates. For one-way trips the second date is the "Latest drop-off" |
 | Rallies per trip | One-way: 1, 1 or 2, or up to 3. Round trip: 2, 2 or 3, or only 3. In a three-rally round trip the middle rally must also end outside the return area (otherwise you'd already be home) |
 | Wait between legs | Days allowed between dropping off one van and picking up the next. Hidden, like the train hop, while a one-way trip is a single rally |
-| Train hop between rallies | Lets the next rally start from a different station this far from where the previous one ended (e.g. arrive in Antwerp, take the train to Brussels). A roadsurfer station and an Imoova city less than 30 km apart always count as the same place ("Across town") |
-| Rentals from | Which providers to use: roadsurfer, Imoova or both |
-| Costs | roadsurfer's rally fee and insurance level, the van's diesel use and the fuel price, for the cost estimates (no tolls). Imoova legs use their listed price instead of the rally fee and insurance |
+| Train hop between rallies | Lets the next rally start from a different station this far from where the previous one ended (e.g. arrive in Antwerp, take the train to Brussels). Stations of two providers (a roadsurfer station and an Imoova city, say) less than 30 km apart always count as the same place ("Across town") |
+| Rentals from | Which providers to use: roadsurfer, Imoova, Movacar or any mix of them |
+| Costs | roadsurfer's rally fee and insurance level, the van's diesel use and the fuel price, for the cost estimates (no tolls). Imoova and Movacar legs use their listed price instead of the rally fee and insurance |
 | Way home | Adds a "Getting home" panel to the selected trip, from the last drop-off to the central station of your home city (see below) |
 
 A one-way chain never loops: each of its rallies ends outside the start area (at least 30 km from
@@ -61,21 +61,28 @@ that opens the provider's booking page for exactly that rally. Settings are reme
 
 ## Providers
 
-| | roadsurfer | Imoova |
-| --- | --- | --- |
-| What | roadsurfer's own rallies | A marketplace where many rental companies (Indie Campers, McRent, Siesta, roadsurfer USA, ...) list relocations |
-| Dates | Fixed pickup and return day | Pick up on any day of a window, then a number of free days. Each possible pickup day is listed as its own rally, returned when the free days end. Extra paid days are not shown |
-| Places | Stations with exact addresses | City centres; the depot address comes with the booking |
-| Price | Not in the data (usually from €129) | Shown on each leg: booking fee plus the daily rate for the free days. Fuel, bond and extra days come on top. US offers are listed in US$ and shown in euros at the ECB rate of the update day ("≈ €91"); the listed price is in the tooltip |
-| Coverage today | Europe and North America | Europe (few offers outside spring and autumn, none from Germany in November) and the USA |
+| | roadsurfer | Imoova | Movacar |
+| --- | --- | --- | --- |
+| What | roadsurfer's own rallies | A marketplace where many rental companies (Indie Campers, McRent, Siesta, roadsurfer USA, ...) list relocations | A marketplace too; its campers are mostly roadsurfer's, the rest Indie Campers'. Cars (Sixt, Europcar) are left out |
+| Dates | Fixed pickup and return day | Pick up on any day of a window, then a number of free days. Each possible pickup day is listed as its own rally, returned when the free days end. Extra paid days are not shown | Earliest pickup and latest return day, like a rally. How many of those days the price includes is only shown on Movacar |
+| Places | Stations with exact addresses | City centres; the depot address comes with the booking | Stations with exact addresses |
+| Price | Not in the data (usually from €129) | Shown on each leg: booking fee plus the daily rate for the free days. Fuel, bond and extra days come on top. US offers are listed in US$ and shown in euros at the ECB rate of the update day ("≈ €91"); the listed price is in the tooltip | Shown on each leg: €1 for the short ones, €99 or €129 for longer ones. Fuel, extra days and extra km come on top |
+| Coverage today | Europe and North America | Europe (few offers outside spring and autumn, none from Germany in November) and the USA | Europe, about five weeks ahead |
+
+Most Movacar offers are rallies roadsurfer lists itself. Those are dropped (same days, both ends
+within 60 km of the rally's stations), so the rally is booked from roadsurfer directly. What is left
+are roadsurfer vans that roadsurfer's own rally page doesn't offer, shown as "Movacar (roadsurfer
+van)" (in November 2026 nearly all of them start in Marburg, which roadsurfer keeps off its list of
+start stations), and other companies' vans. Movacar's Book link opens its list of offers for that
+route; a single offer has no page of its own without logging in.
 
 Each Imoova leg names the rental company whose van it is, e.g. "Imoova (Indie Campers van)". Most
 Imoova offers are Indie Campers' (about 9 in 10 in November 2026). roadsurfer USA also lists vans on
 Imoova. When roadsurfer has a rally on the same route around the same days, only the rally is kept;
 the others are shown as "Imoova (roadsurfer van)".
 
-Each trip card also shows an estimated cost (roadsurfer's rally fee and insurance or Imoova's listed
-price, plus diesel for the van), the
+Each trip card also shows an estimated cost (roadsurfer's rally fee and insurance or Imoova's or Movacar's
+listed price, plus diesel for the van), the
 kilometres a day you'd drive, and the countries on the way. **Lowest cost** sorts by it.
 
 ## Destinations ranking
@@ -170,6 +177,9 @@ The rules for this are in `CLAUDE.md`.
     needs an `X-Requested-Alias` header naming the endpoint.
   - `scraper/imoova.py` asks the GraphQL API behind `imoova.com/deals` for every bookable
     relocation in Europe and the USA (a handful of requests), with the rental company of each.
+  - `scraper/movacar.py` asks the JSON API behind `movacar.com/offers` for the camper offers from
+    each pickup city (about 80 requests). Its stations come without a country, which is taken from
+    the nearest station of the other two sources.
   - `scraper/rates.py` reads the European Central Bank's daily euro rates for the other currencies
     in the data. If that fails, the rates from the last run are kept.
 - `scraper/fetch_route_info.py` works out, once per station pair, the road route (OSRM), the
@@ -188,7 +198,7 @@ The rules for this are in `CLAUDE.md`.
 - `web/app.js` draws the filters, the lists, and the Leaflet map.
 - `serve.py` serves the site and forwards train and bus searches to Transitous (`/api/transit`).
 
-Both are internal APIs, not documented ones, so they can change without notice. Vehicle details
+All three are internal APIs, not documented ones, so they can change without notice. Vehicle details
 are only shown on the providers' booking pages.
 
 ## Tests

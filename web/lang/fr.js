@@ -20,6 +20,7 @@
   "data.noneHelp": "Lancez {script} (ou {command}) pour télécharger les rallys actuels, puis rechargez cette page.",
   "data.count.roadsurfer": { one: "{n} rally roadsurfer", other: "{n} rallys roadsurfer" },
   "data.count.imoova": { one: "{n} relocation Imoova", other: "{n} relocations Imoova" },
+  "data.count.movacar": { one: "{n} relocation Movacar", other: "{n} relocations Movacar" },
   "data.count.other": "{n} chez {provider}",
   "data.updated": "mis à jour le {when}",
   "data.daysOld": { one: "vieilles de {n} jour", other: "vieilles de {n} jours" },
@@ -29,6 +30,7 @@
   "data.runUpdate": "Lancez update-data.bat pour des rallys à jour.",
   "provider.roadsurfer": "Rallys, généralement à partir de {price}",
   "provider.imoova": "De nombreux loueurs, {price} par jour plus des frais de réservation",
+  "provider.movacar": "De nombreux loueurs, à partir de {price}",
   "price.ecb": "{price} au taux de la BCE du {date}",
 
   // Units
@@ -82,7 +84,7 @@
   "costs.fuelPrice": "Prix du carburant (€/l)",
   "costs.normalDay": "Location normale (€ par jour)",
   "costs.oneWayFee": "Frais d'abandon (€)",
-  "costs.hint": "Les frais de rally et l'assurance sont ceux de roadsurfer ; les étapes Imoova coûtent leur prix affiché. S'y ajoute le diesel du van, sans péages. L'assurance ne compte qu'une fois cochée dans le détail des coûts d'un voyage. La location normale et ses frais d'abandon sont des estimations grossières, pour évaluer ce qu'un rally fait économiser.",
+  "costs.hint": "Les frais de rally et l'assurance sont ceux de roadsurfer ; les étapes Imoova et Movacar coûtent leur prix affiché. S'y ajoute le diesel du van, sans péages. L'assurance ne compte qu'une fois cochée dans le détail des coûts d'un voyage. La location normale et ses frais d'abandon sont des estimations grossières, pour évaluer ce qu'un rally fait économiser.",
 
   // Way home settings
   "wayhome.legend": "Retour à la maison",

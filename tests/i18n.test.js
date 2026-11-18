@@ -66,7 +66,7 @@ test("every text the page asks for is in en.js", () => {
     ...["chip", "map.trips", "menu.trips"].flatMap((p) => ["via", "to", "toOrVia"].map((v) => `${p}.${v}`)),
     ...["destinations", "starts"].flatMap((mode) => ["oneway", "round"].map((type) => `rank.what.${mode}.${type}`)),
     ...["train", "town"].flatMap((how) => ["SameDay", "Later"].map((when) => `between.${how}${when}`)),
-    "data.count.roadsurfer", "data.count.imoova", "empty.round3",
+    "data.count.roadsurfer", "data.count.imoova", "data.count.movacar", "empty.round3",
   ]);
   const missing = [...asked].filter((k) => !(k in en));
   assert.deepEqual(missing, []);

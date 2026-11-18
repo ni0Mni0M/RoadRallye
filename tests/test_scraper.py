@@ -14,8 +14,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scraper"))
 
 import history  # noqa: E402
 import imoova  # noqa: E402
+import movacar  # noqa: E402
 from common import Client  # noqa: E402
-from fetch_rallies import drop_known_rallies, previous_part  # noqa: E402
+from fetch_rallies import drop_known_rallies, drop_listed_rallies, fill_countries, previous_part  # noqa: E402
 from rates import parse_ecb  # noqa: E402
 
 LAS_VEGAS = {"id": "14", "name": "Las Vegas", "state": "US_NV", "lat": 36.1716, "lng": -115.1391}
@@ -218,6 +219,136 @@ class History(unittest.TestCase):
         data["stations"] = [{**data["stations"][0], "name": "Köln, Flughafen"}] + data["stations"][1:]
         history.append_new(self.path, data)
         self.assertEqual(self.rows()[0]["from_name"], "Köln, Flughafen")
+
+
+LOGOS = "https://storage.googleapis.com/movacar-prod-assets/"
+PRICES = {
+    "100-EUR": {"amount_minor_units": 100, "currency": "EUR"},
+    "12900-EUR": {"amount_minor_units": 12900, "currency": "EUR"},
+}
+
+
+def offer(id, origin, destination, start, end, price="12900-EUR", logo="roadsurfer.png", kind=movacar.CAMPER):
+    """One offer as Movacar's API returns it (only the fields the scraper reads)."""
+    return {
+        "id": f"{id}_1_2",
+        "attributes": {
+            "offer_id": id,
+            "start_date": start,
+            "end_date": end,
+            "vehicle_type": kind,
+            "brand_image_url": LOGOS + logo if logo else None,
+        },
+        "relationships": {
+            "base_price": {"data": {"id": price, "type": "monetary_amount"}},
+            "origin": {"data": {"id": origin, "type": "station"}},
+            "destination": {"data": {"id": destination, "type": "station"}},
+        },
+    }
+
+
+# The week from Monday 23 November, in Central European Time.
+WEEK = ("2026-11-22T23:00:00Z", "2026-11-29T22:59:59Z")
+
+
+class Movacar(unittest.TestCase):
+    def test_days_are_central_european(self):
+        self.assertEqual(movacar.local_day("2026-11-22T23:00:00Z"), "2026-11-23")  # winter: midnight
+        self.assertEqual(movacar.local_day("2026-11-30T22:59:59Z"), "2026-11-30")
+        self.assertEqual(movacar.local_day("2026-07-05T22:00:00Z"), "2026-07-06")  # summer: midnight
+        self.assertEqual(movacar.local_day("2026-07-12T21:59:59Z"), "2026-07-12")
+        self.assertEqual(movacar.local_day("2026-03-29T00:30:00Z"), "2026-03-29")  # half an hour before the clocks change
+        self.assertEqual(movacar.local_day("2026-10-24T22:00:00Z"), "2026-10-25")  # last night of summer time
+
+    def test_offer_becomes_a_rally(self):
+        rallies = movacar.to_rallies([offer("257296", "2296", "2287", *WEEK)], PRICES)
+        self.assertEqual(rallies, [{
+            "from": "movacar-2296", "to": "movacar-2287", "pickup": "2026-11-23", "return": "2026-11-29",
+            "ref": "257296", "price": 129.0, "currency": "EUR", "supplier": "roadsurfer",
+        }])
+
+    def test_cars_are_left_out(self):
+        self.assertEqual(movacar.to_rallies([offer("1", "1", "2", *WEEK, kind="crowd_vehicle_type_0")], PRICES), [])
+
+    def test_same_route_and_days_twice_keeps_the_cheaper(self):
+        offers = [offer("1", "1", "2", *WEEK), offer("2", "1", "2", *WEEK, price="100-EUR"), offer("3", "1", "2", *WEEK)]
+        rallies = movacar.to_rallies(offers, PRICES)
+        self.assertEqual([(r["ref"], r["price"]) for r in rallies], [("2", 1.0)])
+
+    def test_company_comes_from_the_logo(self):
+        for logo, expected in [
+            ("roadsurfer.png", "roadsurfer"),
+            ("IndieCampers.svg", "Indie Campers"),
+            ("SixtLogo.png", "Sixt"),
+            ("Europcar.png", "Europcar"),
+            (None, None),
+        ]:
+            self.assertEqual(movacar.company(offer("1", "1", "2", *WEEK, logo=logo)), expected)
+
+    def test_offer_without_a_known_price_has_none(self):
+        rally = movacar.to_rallies([offer("1", "1", "2", *WEEK, price="unknown")], PRICES)[0]
+        self.assertNotIn("price", rally)
+
+    def test_station_keeps_the_city_for_the_booking_link(self):
+        station = movacar.slim_station("5428", {
+            "alternative_city": "Kastorf (near Lübeck)", "city": "Kastorf", "latitude": 53.75, "longitude": 10.56,
+        })
+        self.assertEqual(station, {
+            "id": "movacar-5428", "provider": "movacar", "name": "Kastorf (near Lübeck)", "city": "Kastorf",
+            "lat": 53.75, "lon": 10.56,
+        })
+
+
+HAMBURG = {"id": 3, "provider": "roadsurfer", "name": "Hamburg", "country": "DE", "lat": 53.63, "lon": 10.0}
+BORDEAUX = {"id": 20, "provider": "roadsurfer", "name": "Bordeaux", "country": "FR", "lat": 44.83, "lon": -0.7}
+RALLIES = {
+    "stations": [HAMBURG, BORDEAUX],
+    "rallies": [{"from": 3, "to": 20, "pickup": "2026-11-23", "return": "2026-11-30"}],
+}
+
+
+def movacar_part(*rallies):
+    return {
+        "stations": [
+            {"id": "movacar-1", "provider": "movacar", "name": "Hamburg", "lat": 53.55, "lon": 10.0},  # ~9 km away
+            {"id": "movacar-2", "provider": "movacar", "name": "Bordeaux", "lat": 44.84, "lon": -0.58},
+            {"id": "movacar-3", "provider": "movacar", "name": "Split", "lat": 43.51, "lon": 16.44},
+        ],
+        "rallies": [
+            {"from": frm, "to": to, "pickup": pickup, "return": back, "ref": "1", "supplier": supplier}
+            for frm, to, pickup, back, supplier in rallies
+        ],
+    }
+
+
+class DropListedRallies(unittest.TestCase):
+    def test_drops_a_roadsurfer_van_that_is_roadsurfers_own_rally(self):
+        part = movacar_part(("movacar-1", "movacar-2", "2026-11-23", "2026-11-30", "roadsurfer"))
+        result = drop_listed_rallies(part, RALLIES)
+        self.assertEqual(result["rallies"], [])
+        self.assertEqual(result["stations"], [])
+
+    def test_keeps_other_days_other_routes_and_other_companies(self):
+        part = movacar_part(
+            ("movacar-1", "movacar-2", "2026-11-24", "2026-12-01", "roadsurfer"),
+            ("movacar-2", "movacar-1", "2026-11-23", "2026-11-30", "roadsurfer"),
+            ("movacar-1", "movacar-2", "2026-11-23", "2026-11-30", "Indie Campers"),
+            ("movacar-1", "movacar-3", "2026-11-23", "2026-11-30", "roadsurfer"),
+        )
+        result = drop_listed_rallies(part, RALLIES)
+        self.assertEqual(len(result["rallies"]), 4)
+        self.assertEqual(len(result["stations"]), 3)
+
+    def test_keeps_everything_without_roadsurfer_data(self):
+        part = movacar_part(("movacar-1", "movacar-2", "2026-11-23", "2026-11-30", "roadsurfer"))
+        self.assertIs(drop_listed_rallies(part, None), part)
+
+
+class FillCountries(unittest.TestCase):
+    def test_takes_the_country_of_a_station_nearby(self):
+        part = movacar_part()
+        fill_countries(part, [HAMBURG, BORDEAUX])
+        self.assertEqual([s.get("country") for s in part["stations"]], ["DE", "FR", None])  # nothing near Split
 
 
 ECB_SAMPLE = b"""<?xml version="1.0" encoding="UTF-8"?>

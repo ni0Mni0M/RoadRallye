@@ -20,6 +20,7 @@
   "data.noneHelp": "Ejecuta {script} (o {command}) para descargar los rallies actuales y luego recarga esta página.",
   "data.count.roadsurfer": { one: "{n} rally de roadsurfer", other: "{n} rallies de roadsurfer" },
   "data.count.imoova": { one: "{n} traslado de Imoova", other: "{n} traslados de Imoova" },
+  "data.count.movacar": { one: "{n} traslado de Movacar", other: "{n} traslados de Movacar" },
   "data.count.other": "{n} de {provider}",
   "data.updated": "actualizado el {when}",
   "data.daysOld": { one: "de hace {n} día", other: "de hace {n} días" },
@@ -29,6 +30,7 @@
   "data.runUpdate": "Ejecuta update-data.bat para tener rallies actualizados.",
   "provider.roadsurfer": "Rallies, normalmente desde {price}",
   "provider.imoova": "Muchas empresas de alquiler, {price} al día más una tarifa de reserva",
+  "provider.movacar": "Muchas empresas de alquiler, desde {price}",
   "price.ecb": "{price} al tipo del BCE del {date}",
 
   // Units
@@ -82,7 +84,7 @@
   "costs.fuelPrice": "Precio del combustible (€/l)",
   "costs.normalDay": "Alquiler normal (€ al día)",
   "costs.oneWayFee": "Cargo por solo ida (€)",
-  "costs.hint": "La tarifa del rally y el seguro son los de roadsurfer; las etapas de Imoova cuestan su precio publicado. Además, el diésel de la furgoneta, sin peajes. El seguro solo cuenta cuando lo marcas en el detalle de costes de un viaje. El alquiler normal y su cargo por solo ida son estimaciones aproximadas para calcular cuánto ahorra un rally.",
+  "costs.hint": "La tarifa del rally y el seguro son los de roadsurfer; las etapas de Imoova y Movacar cuestan su precio publicado. Además, el diésel de la furgoneta, sin peajes. El seguro solo cuenta cuando lo marcas en el detalle de costes de un viaje. El alquiler normal y su cargo por solo ida son estimaciones aproximadas para calcular cuánto ahorra un rally.",
 
   // Way home settings
   "wayhome.legend": "Vuelta a casa",

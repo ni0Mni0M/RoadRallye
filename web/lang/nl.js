@@ -20,6 +20,7 @@
   "data.noneHelp": "Start {script} (of {command}) om de huidige rally's te downloaden en laad deze pagina daarna opnieuw.",
   "data.count.roadsurfer": { one: "{n} roadsurfer-rally", other: "{n} roadsurfer-rally's" },
   "data.count.imoova": { one: "{n} Imoova-relocatie", other: "{n} Imoova-relocaties" },
+  "data.count.movacar": { one: "{n} Movacar-relocatie", other: "{n} Movacar-relocaties" },
   "data.count.other": "{n} van {provider}",
   "data.updated": "bijgewerkt {when}",
   "data.daysOld": { one: "{n} dag oud", other: "{n} dagen oud" },
@@ -29,6 +30,7 @@
   "data.runUpdate": "Start update-data.bat voor actuele rally's.",
   "provider.roadsurfer": "Rally's, meestal vanaf {price}",
   "provider.imoova": "Veel verhuurbedrijven, {price} per dag plus reserveringskosten",
+  "provider.movacar": "Veel verhuurbedrijven, vanaf {price}",
   "price.ecb": "{price} tegen de ECB-koers van {date}",
 
   // Units
@@ -82,7 +84,7 @@
   "costs.fuelPrice": "Brandstofprijs (€/l)",
   "costs.normalDay": "Normale huur (€ per dag)",
   "costs.oneWayFee": "Toeslag enkele reis (€)",
-  "costs.hint": "Rallytarief en verzekering zijn die van roadsurfer; Imoova-etappes kosten hun vermelde prijs. Daarbij komt diesel voor de camper, zonder tol. De verzekering telt pas mee als je hem aanvinkt in de kostendetails van een reis. De normale huur en de toeslag voor een enkele reis zijn ruwe schattingen, om te zien wat een rally bespaart.",
+  "costs.hint": "Rallytarief en verzekering zijn die van roadsurfer; Imoova- en Movacar-etappes kosten hun vermelde prijs. Daarbij komt diesel voor de camper, zonder tol. De verzekering telt pas mee als je hem aanvinkt in de kostendetails van een reis. De normale huur en de toeslag voor een enkele reis zijn ruwe schattingen, om te zien wat een rally bespaart.",
 
   // Way home settings
   "wayhome.legend": "Terug naar huis",
