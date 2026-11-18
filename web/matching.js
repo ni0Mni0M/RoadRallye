@@ -11,6 +11,9 @@
   // Stations of different providers this close together count as one place, even with train hops off:
   // Imoova only gives city centres, up to ~30 km from the roadsurfer station in the same city (Milan, Dallas).
   const SAME_PLACE_KM = 30;
+  // One rental company's station listed by two sources, a few hundred metres apart, is one station:
+  // roadsurfer's Marburg, and the Marburg that Movacar lists for roadsurfer's vans.
+  const SAME_STATION_KM = 1;
 
   function haversineKm(a, b) {
     const rad = Math.PI / 180;
@@ -20,6 +23,49 @@
       Math.sin(dLat / 2) ** 2 +
       Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLon / 2) ** 2;
     return 2 * EARTH_RADIUS_KM * Math.asin(Math.sqrt(h));
+  }
+
+  /**
+   * The stations that are listed twice: station id -> Set of the ids of its other entries.
+   * Two entries are one station when they lie within SAME_STATION_KM of each other and belong to
+   * the same rental company. A station's companies are whoever supplies the vans of its rallies
+   * (Movacar and Imoova name the supplier, roadsurfer's own rallies are roadsurfer's), so another
+   * company's station next door stays a separate one. A station without rallies goes by its source.
+   */
+  function stationTwins(data) {
+    const located = data.stations.filter((s) => typeof s.lat === "number" && typeof s.lon === "number");
+    const sourceOf = new Map(located.map((s) => [s.id, s.provider || "roadsurfer"]));
+    const companies = new Map(located.map((s) => [s.id, new Set()]));
+    for (const r of data.rallies) {
+      const from = companies.get(r.from);
+      const to = companies.get(r.to);
+      if (!from || !to) continue;
+      const company = r.supplier || sourceOf.get(r.from);
+      from.add(company);
+      to.add(company);
+    }
+    for (const [id, set] of companies) {
+      if (!set.size) set.add(sourceOf.get(id));
+    }
+    const twins = new Map();
+    const link = (a, b) => {
+      if (!twins.has(a)) twins.set(a, new Set());
+      twins.get(a).add(b);
+    };
+    const maxLatDiff = SAME_STATION_KM / 111; // one degree of latitude is ~111 km: skips most pairs cheaply
+    for (let i = 0; i < located.length; i++) {
+      for (let j = i + 1; j < located.length; j++) {
+        const a = located[i];
+        const b = located[j];
+        if (Math.abs(a.lat - b.lat) > maxLatDiff || haversineKm(a, b) > SAME_STATION_KM) continue;
+        const shared = [...companies.get(a.id)].some((c) => companies.get(b.id).has(c));
+        if (shared) {
+          link(a.id, b.id);
+          link(b.id, a.id);
+        }
+      }
+    }
+    return twins;
   }
 
   // Dates are "YYYY-MM-DD" strings; compare them as UTC days so DST never shifts a day.
@@ -69,6 +115,7 @@
    *   returnRadiusKm  round trips only: last rally must end this close to home
    *   hopRadiusKm     a rally may start this far from where the previous one ended (0 = same station,
    *                   or another provider's station within SAME_PLACE_KM)
+   *                   A station listed twice (stationTwins) counts as one station for all three.
    *   earliest        first allowed pickup date ("YYYY-MM-DD")
    *   latest          last allowed return date ("YYYY-MM-DD")
    *   maxWaitDays     days allowed between one drop-off and the next pickup
@@ -93,6 +140,12 @@
     }
     const homeKm = new Map();
     for (const s of stations.values()) homeKm.set(s.id, haversineKm(opts.home, s));
+    // A station listed twice is as far from home as its nearest entry: "home only" covers both.
+    const twins = stationTwins(data);
+    const sameStation = (a, b) => a === b || (twins.has(a) && twins.get(a).has(b));
+    for (const [id, others] of twins) {
+      homeKm.set(id, Math.min(haversineKm(opts.home, stations.get(id)), ...[...others].map((o) => haversineKm(opts.home, stations.get(o)))));
+    }
 
     const byStart = new Map();
     for (const r of data.rallies) {
@@ -109,7 +162,7 @@
         const list = [];
         for (const startId of byStart.keys()) {
           const there = stations.get(startId);
-          const km = startId === id ? 0 : haversineKm(here, there);
+          const km = sameStation(startId, id) ? 0 : haversineKm(here, there);
           const samePlace = km <= SAME_PLACE_KM && (here.provider || "") !== (there.provider || "");
           if (km <= opts.hopRadiusKm || samePlace) list.push({ id: startId, km });
         }
@@ -192,5 +245,5 @@
 
   const findRoundTrips = (data, opts) => findTrips(data, { ...opts, tripType: "round" });
 
-  return { SAME_PLACE_KM, haversineKm, daysBetween, addDays, findTrips, findRoundTrips };
+  return { SAME_PLACE_KM, SAME_STATION_KM, haversineKm, stationTwins, daysBetween, addDays, findTrips, findRoundTrips };
 });

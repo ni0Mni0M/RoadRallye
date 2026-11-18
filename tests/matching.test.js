@@ -1,7 +1,7 @@
 // Run with: node --test tests/matching.test.js
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { findTrips, findRoundTrips, haversineKm, daysBetween, addDays, SAME_PLACE_KM } = require("../web/matching.js");
+const { findTrips, findRoundTrips, stationTwins, haversineKm, daysBetween, addDays, SAME_PLACE_KM } = require("../web/matching.js");
 
 const BERLIN = { lat: 52.5200, lon: 13.4050 };
 
@@ -208,6 +208,52 @@ test("nearby stations of the same provider still need a train hop", () => {
   ];
   assert.equal(find(rallies).length, 0);
   assert.equal(find(rallies, { hopRadiusKm: 20 }).length, 1);
+});
+
+// roadsurfer's Marburg station, the same station as Movacar lists it (180 m away), and another
+// company's depot just as close.
+const MARBURG = { id: 22, name: "Marburg", lat: 50.8299781, lon: 8.7707884 };
+const marburgStations = [
+  ...stations,
+  MARBURG,
+  { id: "movacar-2853", provider: "movacar", name: "Marburg", lat: 50.8298189, lon: 8.7682135 },
+  { id: "movacar-9", provider: "movacar", name: "Marburg", lat: 50.8301, lon: 8.7695 },
+];
+const viaMovacar = (r, supplier) => ({ ...r, supplier });
+const fromMarburg = (rallies, overrides = {}) =>
+  findTrips({ stations: marburgStations, rallies }, { ...defaults, home: MARBURG, startRadiusKm: 0, tripType: "oneway", ...overrides });
+
+test("one company's station listed by two sources is one station", () => {
+  const rallies = [viaMovacar(rally("movacar-2853", 3, "2026-11-03", "2026-11-10"), "roadsurfer")];
+  const twins = stationTwins({ stations: marburgStations, rallies });
+  assert.deepEqual([...twins.get(22)], ["movacar-2853"]);
+  assert.deepEqual([...twins.get("movacar-2853")], [22]);
+
+  const trips = fromMarburg(rallies); // start radius 0: home station only
+  assert.equal(trips.length, 1);
+  assert.equal(trips[0].startKm, 0);
+});
+
+test("another company's station next door stays a separate station", () => {
+  const rallies = [viaMovacar(rally("movacar-9", 3, "2026-11-03", "2026-11-10"), "Indie Campers")];
+  assert.equal(stationTwins({ stations: marburgStations, rallies }).size, 0);
+  assert.equal(fromMarburg(rallies).length, 0);
+  assert.equal(fromMarburg(rallies, { startRadiusKm: 10 }).length, 1);
+});
+
+test("a station listed twice needs no hop, and ends a round trip at home", () => {
+  const rallies = [
+    viaMovacar(rally("movacar-2853", 47, "2026-11-03", "2026-11-10"), "roadsurfer"),
+    rally(47, 22, "2026-11-10", "2026-11-17"),
+    viaMovacar(rally("movacar-2853", 3, "2026-11-17", "2026-11-24"), "roadsurfer"),
+  ];
+  const [round, ...rest] = fromMarburg(rallies, { tripType: "round", returnRadiusKm: 0 });
+  assert.equal(rest.length, 0);
+  assert.equal(round.endKm, 0);
+
+  // Arriving at roadsurfer's entry and leaving from Movacar's is no hop at all.
+  const chain = findTrips({ stations: marburgStations, rallies: rallies.slice(1) }, { ...defaults, home: stations[2], startRadiusKm: 0, tripType: "oneway", maxLegs: 2 });
+  assert.deepEqual(chain.find((t) => t.legs.length === 2).hops, [0]);
 });
 
 test("offers that differ only in the return date are separate trips", () => {

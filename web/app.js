@@ -233,6 +233,9 @@
     (s) => providerById.get(s.id) === "roadsurfer" || !roadsurferStations.some((o) => M.haversineKm(s, o) <= M.SAME_PLACE_KM)
   );
   const homeById = new Map(homeChoices.map((s) => [String(s.id), s.id])); // <select> values are strings
+  // One rental company's station listed by two sources (roadsurfer's Marburg and Movacar's) is one station.
+  const stationTwins = M.stationTwins(data);
+  const sameStation = (a, b) => a === b || (stationTwins.has(a) && stationTwins.get(a).has(b));
 
   const today = localToday();
   const berlin = homeChoices.find((s) => s.name === "Berlin");
@@ -682,7 +685,7 @@
     const arrive = stations.get(t.legs[i].to);
     const depart = stations.get(t.legs[i + 1].from);
     const wait = t.waits[i];
-    if (arrive.id !== depart.id) {
+    if (!sameStation(arrive.id, depart.id)) {
       const acrossTown = t.hops[i] <= M.SAME_PLACE_KM && providerById.get(arrive.id) !== providerById.get(depart.id);
       const key = `between.${acrossTown ? "town" : "train"}${wait ? "Later" : "SameDay"}`;
       const text = tr(key, { from: esc(arrive.name), to: esc(depart.name), km: fmtKm(t.hops[i]), n: wait });
@@ -1228,7 +1231,7 @@
     const hidden = new Set(settings.hideProviders);
     for (const s of stations.values()) {
       if (hidden.has(providerById.get(s.id))) continue;
-      const km = M.haversineKm(home, s);
+      const km = sameStation(settings.home, s.id) ? 0 : M.haversineKm(home, s);
       const role = km <= settings.startRadius ? "out" : !oneWay() && km <= settings.returnRadius ? "back" : "far";
       const n = viaCounts.get(s.id) || 0;
       const marker = L.circleMarker([s.lat, s.lon], {
