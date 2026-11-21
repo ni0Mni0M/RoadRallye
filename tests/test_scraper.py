@@ -16,7 +16,9 @@ import history  # noqa: E402
 import imoova  # noqa: E402
 import movacar  # noqa: E402
 from common import Client  # noqa: E402
-from fetch_rallies import drop_known_rallies, drop_listed_rallies, fill_countries, previous_part  # noqa: E402
+from fetch_rallies import (  # noqa: E402
+    drop_known_rallies, drop_listed_rallies, fill_countries, previous_part, use_depot_addresses,
+)
 from rates import parse_ecb  # noqa: E402
 
 LAS_VEGAS = {"id": "14", "name": "Las Vegas", "state": "US_NV", "lat": 36.1716, "lng": -115.1391}
@@ -349,6 +351,59 @@ class FillCountries(unittest.TestCase):
         part = movacar_part()
         fill_countries(part, [HAMBURG, BORDEAUX])
         self.assertEqual([s.get("country") for s in part["stations"]], ["DE", "FR", None])  # nothing near Split
+
+
+def city_centres(*rallies):
+    """Imoova's side: city centres, a few km from the depots in movacar_part."""
+    return {
+        "stations": [
+            {"id": "imoova-1", "provider": "imoova", "name": "Hamburg", "country": "DE", "lat": 53.60, "lon": 9.95},
+            {"id": "imoova-2", "provider": "imoova", "name": "Bordeaux", "country": "FR", "lat": 44.80, "lon": -0.62},
+            {"id": "imoova-3", "provider": "imoova", "name": "Split", "country": "HR", "lat": 43.55, "lon": 16.50},
+        ],
+        "rallies": [
+            {"from": frm, "to": to, "pickup": "2026-11-24", "return": "2026-12-01", "ref": "9", "supplier": supplier}
+            for frm, to, supplier in rallies
+        ],
+    }
+
+
+class UseDepotAddresses(unittest.TestCase):
+    def position(self, part, id):
+        return next((s["lat"], s["lon"]) for s in part["stations"] if s["id"] == id)
+
+    def test_imoova_takes_the_depot_of_the_same_company_on_the_same_route(self):
+        movacar = movacar_part(("movacar-1", "movacar-2", "2026-11-23", "2026-11-30", "Indie Campers"))
+        imoova = city_centres(("imoova-1", "imoova-2", "Indie Campers"), ("imoova-1", "imoova-3", "Indie Campers"))
+        result = use_depot_addresses(imoova, movacar)
+        self.assertEqual(self.position(result, "imoova-1"), (53.55, 10.0))
+        self.assertEqual(self.position(result, "imoova-2"), (44.84, -0.58))
+        self.assertEqual(self.position(result, "imoova-3"), (43.55, 16.50))  # no Movacar offer to Split
+        self.assertEqual(result["stations"][0]["country"], "DE")
+        self.assertEqual(result["rallies"], imoova["rallies"])
+        self.assertEqual(self.position(imoova, "imoova-1"), (53.60, 9.95))  # the part passed in is untouched
+
+    def test_other_companies_other_routes_and_roadsurfer_stay_in_the_centre(self):
+        imoova = city_centres(("imoova-1", "imoova-2", "McRent"), ("imoova-2", "imoova-1", "Indie Campers"),
+                              ("imoova-1", "imoova-2", "roadsurfer"))
+        movacar = movacar_part(
+            ("movacar-1", "movacar-2", "2026-11-23", "2026-11-30", "Indie Campers"),
+            ("movacar-1", "movacar-2", "2026-11-23", "2026-11-30", "roadsurfer"),
+        )
+        self.assertEqual(use_depot_addresses(imoova, movacar)["stations"], imoova["stations"])
+
+    def test_a_city_that_fits_two_depots_takes_the_nearest(self):
+        movacar = movacar_part(
+            ("movacar-1", "movacar-2", "2026-11-23", "2026-11-30", "Indie Campers"),
+            ("movacar-4", "movacar-2", "2026-11-23", "2026-11-30", "Indie Campers"),
+        )
+        movacar["stations"].append({"id": "movacar-4", "provider": "movacar", "name": "Lübeck", "lat": 53.87, "lon": 10.69})
+        result = use_depot_addresses(city_centres(("imoova-1", "imoova-2", "Indie Campers")), movacar)
+        self.assertEqual(self.position(result, "imoova-1"), (53.55, 10.0))
+
+    def test_keeps_everything_without_movacar_data(self):
+        imoova = city_centres(("imoova-1", "imoova-2", "Indie Campers"))
+        self.assertIs(use_depot_addresses(imoova, None), imoova)
 
 
 ECB_SAMPLE = b"""<?xml version="1.0" encoding="UTF-8"?>

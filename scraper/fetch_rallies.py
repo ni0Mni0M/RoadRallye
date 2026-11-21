@@ -114,6 +114,45 @@ def drop_listed_rallies(movacar_part, roadsurfer_part):
     return {**movacar_part, "rallies": rallies, "stations": [s for s in movacar_part["stations"] if s["id"] in used]}
 
 
+def use_depot_addresses(imoova_part, movacar_part):
+    """Move Imoova's stations to the depot Movacar names. Imoova only gives the city centre; Movacar
+    gives the depot's address. When both list a van of the same rental company on the same route
+    (both ends within SAME_ROUTE_KM), Imoova's two stations take the position of Movacar's.
+    roadsurfer's vans are left alone: its own station list says where those are.
+
+    An Imoova city that fits several depots takes the nearest. Every rally from that city moves
+    with it, other companies' too.
+    """
+    if not imoova_part or not movacar_part:
+        return imoova_part
+    im = {s["id"]: s for s in imoova_part["stations"]}
+    mv = {s["id"]: s for s in movacar_part["stations"]}
+    routes = {}  # company -> Movacar's routes (from, to)
+    for r in movacar_part["rallies"]:
+        if r.get("supplier") and r["supplier"] != "roadsurfer" and r["from"] in mv and r["to"] in mv:
+            routes.setdefault(r["supplier"], set()).add((r["from"], r["to"]))
+
+    depots = {}  # Imoova station id -> (km, Movacar station), the nearest so far
+    def note(imoova_id, movacar_id):
+        km = haversine_km(im[imoova_id], mv[movacar_id])
+        if imoova_id not in depots or km < depots[imoova_id][0]:
+            depots[imoova_id] = (km, mv[movacar_id])
+
+    for frm, to, company in {(r["from"], r["to"], r.get("supplier")) for r in imoova_part["rallies"]}:
+        if frm not in im or to not in im:
+            continue
+        for mv_from, mv_to in routes.get(company, ()):
+            if haversine_km(im[frm], mv[mv_from]) <= SAME_ROUTE_KM and haversine_km(im[to], mv[mv_to]) <= SAME_ROUTE_KM:
+                note(frm, mv_from)
+                note(to, mv_to)
+
+    stations = [
+        {**s, "lat": depots[s["id"]][1]["lat"], "lon": depots[s["id"]][1]["lon"]} if s["id"] in depots else s
+        for s in imoova_part["stations"]
+    ]
+    return {**imoova_part, "stations": stations}
+
+
 def fill_countries(part, others):
     """Give the stations that came without a country (Movacar's) the country of the nearest station
     in `others`, when there is one within SAME_ROUTE_KM. The rest stay without."""
@@ -196,6 +235,8 @@ def main():
         # Countries first, from every station the other sources fetched, also those that go unused.
         fill_countries(parts["movacar"], [s for name, part in parts.items() if name != "movacar" for s in part["stations"]])
         parts["movacar"] = drop_listed_rallies(parts["movacar"], parts.get("roadsurfer"))
+    if "imoova" in parts:
+        parts["imoova"] = use_depot_addresses(parts["imoova"], parts.get("movacar"))
 
     sources = {
         name: {k: part[k] for k in ("fetched_at", "error", "failed_routes") if part.get(k) is not None}
