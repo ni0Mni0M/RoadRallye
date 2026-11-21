@@ -30,6 +30,9 @@
       <header class="panel-head">
         <h1 data-i18n="page.heading">Rally trips</h1>
         <div class="head-tools">
+          <button type="button" id="settingsToggle" class="icon-btn head-btn" aria-expanded="false" aria-controls="settingsPanel" data-i18n-attr="title:settings.button;aria-label:settings.button">
+            <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M2 4.5h6.5M13 4.5h1M2 11.5h1M7.5 11.5H14"/><circle cx="10.75" cy="4.5" r="2"/><circle cx="5.25" cy="11.5" r="2"/></svg>
+          </button>
           <div class="lang">
             <button type="button" id="langToggle" class="icon-btn head-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="langMenu">
               <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M3.5 14.5V2.2M3.5 2.8c1.5-.9 3-.9 4.5 0s3 .9 4.5 0v6c-1.5.9-3 .9-4.5 0s-3-.9-4.5 0"/></svg>
@@ -46,6 +49,70 @@
       </header>
 
       <form id="filters" class="filters" autocomplete="off" onsubmit="return false">
+        <!-- Opened with the settings button in the header: what you set once and then leave alone. -->
+        <div id="settingsPanel" class="settings" hidden>
+          <div class="settings-head">
+            <h2 data-i18n="settings.button">Settings</h2>
+            <button type="button" id="settingsDone" class="settings-done" data-i18n="settings.done">Done</button>
+          </div>
+          <fieldset>
+            <legend data-i18n="costs.legend">Costs (estimate)</legend>
+            <div class="row">
+              <label class="field">
+                <span class="label" data-i18n="costs.rallyFee">Rally fee (€)</span>
+                <input type="number" id="rallyFee" min="0" max="2000" step="1" inputmode="decimal">
+              </label>
+              <label class="field">
+                <span class="label" data-i18n="costs.insurance">Insurance (optional)</span>
+                <select id="insurance">
+                  <option value="0">Basic, €0 a day</option>
+                  <option value="15">Plus, €15 a day</option>
+                  <option value="29">Max, €29 a day</option>
+                </select>
+              </label>
+            </div>
+            <div class="row">
+              <label class="field">
+                <span class="label" data-i18n="costs.van">Van uses (l/100 km)</span>
+                <input type="number" id="vanConsumption" min="3" max="25" step="0.5" inputmode="decimal">
+              </label>
+              <label class="field">
+                <span class="label" data-i18n="costs.fuelPrice">Fuel price (€/l)</span>
+                <input type="number" id="fuelPrice" min="0.5" max="5" step="0.05" inputmode="decimal">
+              </label>
+            </div>
+            <div class="row">
+              <label class="field">
+                <span class="label" data-i18n="costs.normalDay">Normal rental (€ a day)</span>
+                <input type="number" id="normalDayPrice" min="0" max="1000" step="1" inputmode="decimal">
+              </label>
+              <label class="field">
+                <span class="label" data-i18n="costs.oneWayFee">One-way fee (€)</span>
+                <input type="number" id="oneWayFee" min="0" max="5000" step="1" inputmode="decimal">
+              </label>
+            </div>
+            <p class="hint" data-i18n="costs.hint">Rally fee and insurance are roadsurfer's; Imoova and Movacar legs use their listed price. Plus diesel for the van, no tolls. Insurance only counts once you tick it in a trip's cost details. The normal rental and its one-way fee are rough guesses, used to estimate what a rally saves.</p>
+          </fieldset>
+
+          <fieldset>
+            <legend data-i18n="wayhome.legend">Way home</legend>
+            <label class="check">
+              <input type="checkbox" id="wayHome">
+              <span data-i18n="wayhome.plan">Plan how to get home from the last drop-off</span>
+            </label>
+            <div id="wayHomeOptions" hidden>
+              <label class="field">
+                <span class="label" data-i18n="wayhome.dropoff">Drop off the last van around</span>
+                <input type="time" id="dropoffTime" step="900">
+              </label>
+              <label class="field">
+                <span class="label" data-i18n="wayhome.car">Car home uses (l/100 km)</span>
+                <input type="number" id="carConsumption" min="1" max="30" step="0.5" inputmode="decimal">
+              </label>
+            </div>
+          </fieldset>
+        </div>
+
         <div class="trip-type">
           <div class="segmented type-switch" role="radiogroup" data-i18n-attr="aria-label:trip.kind">
             <label>
@@ -109,76 +176,21 @@
               <label><input type="radio" name="legs" value="3"><span data-i18n="filters.legs.3only">3 only</span></label>
             </div>
           </div>
-          <label class="field slider" id="maxWaitField" hidden>
-            <span class="label"><span data-i18n="filters.wait">Wait between legs</span> <output id="maxWaitOut"></output></span>
-            <input type="range" id="maxWait" min="0" max="10" step="1">
-          </label>
-          <label class="field slider slider-hop" id="hopField" hidden>
-            <span class="label"><span data-i18n="filters.hop">Train hop between rallies</span> <output id="hopRadiusOut"></output></span>
-            <input type="range" id="hopRadius" min="0" max="150" step="5">
-          </label>
-        </fieldset>
-
-        <fieldset id="providerSet" hidden>
-          <legend data-i18n="filters.providers">Rentals from</legend>
-          <div id="providers"></div>
-        </fieldset>
-
-        <fieldset>
-          <legend data-i18n="costs.legend">Costs (estimate)</legend>
-          <div class="row">
-            <label class="field">
-              <span class="label" data-i18n="costs.rallyFee">Rally fee (€)</span>
-              <input type="number" id="rallyFee" min="0" max="2000" step="1" inputmode="decimal">
+          <details id="moreOptions" class="more">
+            <summary><span data-i18n="more.options">More options</span><span id="moreChanged" class="more-changed"></span></summary>
+            <label class="field slider" id="maxWaitField" hidden>
+              <span class="label"><span data-i18n="filters.wait">Wait between legs</span> <output id="maxWaitOut"></output></span>
+              <input type="range" id="maxWait" min="0" max="10" step="1">
             </label>
-            <label class="field">
-              <span class="label" data-i18n="costs.insurance">Insurance (optional)</span>
-              <select id="insurance">
-                <option value="0">Basic, €0 a day</option>
-                <option value="15">Plus, €15 a day</option>
-                <option value="29">Max, €29 a day</option>
-              </select>
+            <label class="field slider slider-hop" id="hopField" hidden>
+              <span class="label"><span data-i18n="filters.hop">Train hop between rallies</span> <output id="hopRadiusOut"></output></span>
+              <input type="range" id="hopRadius" min="0" max="150" step="5">
             </label>
-          </div>
-          <div class="row">
-            <label class="field">
-              <span class="label" data-i18n="costs.van">Van uses (l/100 km)</span>
-              <input type="number" id="vanConsumption" min="3" max="25" step="0.5" inputmode="decimal">
-            </label>
-            <label class="field">
-              <span class="label" data-i18n="costs.fuelPrice">Fuel price (€/l)</span>
-              <input type="number" id="fuelPrice" min="0.5" max="5" step="0.05" inputmode="decimal">
-            </label>
-          </div>
-          <div class="row">
-            <label class="field">
-              <span class="label" data-i18n="costs.normalDay">Normal rental (€ a day)</span>
-              <input type="number" id="normalDayPrice" min="0" max="1000" step="1" inputmode="decimal">
-            </label>
-            <label class="field">
-              <span class="label" data-i18n="costs.oneWayFee">One-way fee (€)</span>
-              <input type="number" id="oneWayFee" min="0" max="5000" step="1" inputmode="decimal">
-            </label>
-          </div>
-          <p class="hint" data-i18n="costs.hint">Rally fee and insurance are roadsurfer's; Imoova and Movacar legs use their listed price. Plus diesel for the van, no tolls. Insurance only counts once you tick it in a trip's cost details. The normal rental and its one-way fee are rough guesses, used to estimate what a rally saves.</p>
-        </fieldset>
-
-        <fieldset>
-          <legend data-i18n="wayhome.legend">Way home</legend>
-          <label class="check">
-            <input type="checkbox" id="wayHome">
-            <span data-i18n="wayhome.plan">Plan how to get home from the last drop-off</span>
-          </label>
-          <div id="wayHomeOptions" hidden>
-            <label class="field">
-              <span class="label" data-i18n="wayhome.dropoff">Drop off the last van around</span>
-              <input type="time" id="dropoffTime" step="900">
-            </label>
-            <label class="field">
-              <span class="label" data-i18n="wayhome.car">Car home uses (l/100 km)</span>
-              <input type="number" id="carConsumption" min="1" max="30" step="0.5" inputmode="decimal">
-            </label>
-          </div>
+            <div class="field" id="providerSet" hidden>
+              <span class="label" data-i18n="filters.providers">Rentals from</span>
+              <div id="providers"></div>
+            </div>
+          </details>
         </fieldset>
       </form>
 

@@ -455,6 +455,14 @@
     $("legsRoundField").hidden = oneWayNow;
     $("maxWaitField").hidden = !chains;
     $("hopField").hidden = !chains;
+    // "More options" says how many of its filters are off their defaults, so a folded-away
+    // filter never narrows the trips unseen. With nothing in it to show, it goes.
+    const changed =
+      (chains && v("maxWait") !== DEFAULTS.maxWait ? 1 : 0) +
+      (chains && v("hopRadius") !== DEFAULTS.hopRadius ? 1 : 0) +
+      (providerBoxes().some((box) => !box.checked) ? 1 : 0);
+    $("moreOptions").hidden = !chains && $("providerSet").hidden;
+    $("moreChanged").textContent = changed ? tr("more.changed", { n: changed }) : "";
     $("sortDistance").textContent = tr(oneWayNow ? "sort.farthest" : "sort.closest");
   }
 
@@ -1997,6 +2005,18 @@
   }
 
   // ---------- Events ----------
+
+  // The settings (costs, way home) stay folded away until the button in the header opens them.
+  function showSettings(open) {
+    $("settingsPanel").hidden = !open;
+    $("settingsToggle").setAttribute("aria-expanded", String(open));
+    if (open) $("settingsPanel").scrollIntoView({ block: "nearest" });
+  }
+  $("settingsToggle").addEventListener("click", () => showSettings($("settingsPanel").hidden));
+  $("settingsDone").addEventListener("click", () => {
+    showSettings(false);
+    $("settingsToggle").focus();
+  });
 
   $("filters").addEventListener("input", onFilterChange);
   $("filters").addEventListener("change", onFilterChange);
