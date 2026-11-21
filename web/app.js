@@ -1613,6 +1613,41 @@
 
   let whDetailsOpen = false; // whether "Connection details" is slid out; kept while you switch connections and trips
 
+  // The way home shows as two buttons (train & bus, car); a click on one opens its details. They
+  // fold away again with a second click on that button, after 30 seconds without any input, once
+  // they are scrolled out of sight, and when another trip is picked (selectTrip).
+  const WH_IDLE_MS = 30000;
+  const WH_INPUTS = ["pointerdown", "pointermove", "keydown", "wheel", "touchstart", "scroll"];
+  let whOpen = false;
+  let whIdleTimer = 0;
+  const whSeen = new IntersectionObserver((entries) => {
+    if (whOpen && !entries[entries.length - 1].isIntersecting) closeWayHome();
+  });
+
+  function restartWhIdle() {
+    clearTimeout(whIdleTimer);
+    whIdleTimer = setTimeout(closeWayHome, WH_IDLE_MS);
+  }
+
+  function openWayHome() {
+    if (!whOpen) {
+      for (const type of WH_INPUTS) document.addEventListener(type, restartWhIdle, { capture: true, passive: true });
+    }
+    whOpen = true;
+    restartWhIdle();
+  }
+
+  // `redraw: false` when the caller is about to draw the card anyway.
+  function closeWayHome(redraw = true) {
+    if (!whOpen) return;
+    whOpen = false;
+    clearTimeout(whIdleTimer);
+    whSeen.disconnect();
+    for (const type of WH_INPUTS) document.removeEventListener(type, restartWhIdle, { capture: true });
+    const t = trips.find((x) => x.id === selectedId);
+    if (redraw !== false && t) renderWayHome(t);
+  }
+
   // Exact minutes, unlike fmtDuration: a 7-minute change must not read as 5.
   function fmtMinutes(min) {
     const m = Math.round(min);
@@ -1812,20 +1847,25 @@
     const mode = settings.homeMode;
 
     const tab = (m, label, summary) =>
-      `<button type="button" role="tab" class="wh-tab" data-mode="${m}" aria-selected="${m === mode}">${label}<span>${summary}</span></button>`;
-    const body = mode === "car" ? carHtml(end, home, drive) : transitHtml(end, home, transit, live, chosen, date);
+      `<button type="button" role="tab" class="wh-tab" data-mode="${m}" aria-selected="${whOpen && m === mode}">${label}<span>${summary}</span></button>`;
+    const body = !whOpen ? "" : mode === "car" ? carHtml(end, home, drive) : transitHtml(end, home, transit, live, chosen, date);
     const transitSummary = !live
       ? "…"
       : liveOk ? fmtDuration(live.options[0].durationMin) : fmtRange(transit.lowMin, transit.highMin);
 
     panel.innerHTML =
-      `<h4>${tr("wh.title", { place: esc(end.name) })}</h4>` +
-      `<p class="wh-sub">${tr("wh.sub", { date: fmtDay(date), km: fmtKm(crowKm), home: esc(home.name) })}</p>` +
+      `<p class="wh-head">${tr("wh.title", { place: esc(end.name) })}</p>` +
       `<div class="wh-tabs" role="tablist" aria-label="${esc(tr("wh.tabs"))}">` +
       tab("transit", esc(tr("wh.transit")), transitSummary) +
       tab("car", esc(tr("wh.car")), !drive ? "…" : drive.error ? "–" : fmtDuration(drive.min)) +
       "</div>" +
-      `<div class="wh-body" role="tabpanel">${body}</div>`;
+      (whOpen
+        ? `<p class="wh-sub">${tr("wh.sub", { date: fmtDay(date), km: fmtKm(crowKm), home: esc(home.name) })}</p>` +
+          `<div class="wh-body" role="tabpanel">${body}</div>`
+        : "");
+    // Watched while open, so scrolling the panel out of sight folds the details away.
+    whSeen.disconnect();
+    if (whOpen) whSeen.observe(panel);
     drawWayHome(mode, end, home, drive, liveOk ? live.options[chosen] : null);
   }
 
@@ -1851,56 +1891,83 @@
 
   // Parks and World Heritage sites were only looked up in Europe.
   const NO_SITE_LOOKUP = new Set(["US", "CA", "MX"]);
-  // "A, B, C, D, +14 more", where a click on "+14 more" shows the rest.
-  const nameList = (names, max = 4) =>
-    names.length <= max + 1
-      ? esc(names.join(", "))
-      : esc(names.slice(0, max).join(", ")) +
-        `<button type="button" class="more-names" data-more>, ${tr("list.more", { n: names.length - max })}</button>` +
-        `<span hidden>, ${esc(names.slice(max).join(", "))}</span>`;
 
-  function alongLegHtml(leg, kind, a, b) {
-    const main = leg.measured
-      ? `${fmtKm(leg.km)}${leg.drivingMin !== null ? ` · ${tr("along.driving", { time: fmtDuration(leg.drivingMin) })}` : ""}`
-      : tr("along.estimated", { km: fmtKm(leg.km) });
-    const countries = leg.countries.length > 1 ? `<p class="along-detail">${esc(leg.countries.map(countryName).join(" → "))}</p>` : "";
-    const details = [];
+  // One small line icon per kind of fact, so a rally fits in a row; the words are in the tooltip.
+  const ALONG_ICONS = {
+    road: whIcon('<path d="M5 14 6.5 2M11 14 9.5 2M8 3.5V5M8 7.2v1.6M8 11v1.5"/>'),
+    clock: whIcon('<circle cx="8" cy="8" r="6"/><path d="M8 4.5V8l2.5 1.5"/>'),
+    park: whIcon('<path d="M8 1.5 3.5 7.5h2.2L3 12h10L10.3 7.5h2.2zM8 12v2.5"/>'),
+    unesco: whIcon('<path d="M2 5.5 8 2l6 3.5zM3.5 7.5V12M6.5 7.5V12M9.5 7.5V12M12.5 7.5V12M2 13.8h12"/>'),
+    coast: whIcon('<path d="M1.5 6.2c1.6-1.6 3.2-1.6 4.8 0s3.2 1.6 4.8 0 2.3-1.2 3.4-.6M1.5 10.7c1.6-1.6 3.2-1.6 4.8 0s3.2 1.6 4.8 0 2.3-1.2 3.4-.6"/>'),
+    mountain: whIcon('<path d="M1.5 13 6 4.5l2.5 4.5L10 6.5l4.5 6.5z"/>'),
+    pin: whIcon('<path d="M8 14.5S3.5 10 3.5 6.5a4.5 4.5 0 0 1 9 0C12.5 10 8 14.5 8 14.5z"/><circle cx="8" cy="6.5" r="1.5"/>'),
+    temp: whIcon('<path d="M8 2a1.5 1.5 0 0 1 1.5 1.5v5.3a3 3 0 1 1-3 0V3.5A1.5 1.5 0 0 1 8 2z"/>'),
+    sun: whIcon('<circle cx="8" cy="8" r="2.8"/><path d="M8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M12.6 3.4l-1.1 1.1M4.5 11.5l-1.1 1.1"/>'),
+    rain: whIcon('<path d="M4.5 9.5a2.8 2.8 0 0 1 .4-5.6 3.6 3.6 0 0 1 6.9 1 2.3 2.3 0 0 1-.3 4.6zM5.5 12v1.5M8 12v2M10.5 12v1.5"/>'),
+    info: whIcon('<circle cx="8" cy="8" r="6"/><path d="M8 7.2v3.6M8 5.2h.01"/>'),
+  };
+
+  // One fact in a row: its icon and a short value (HTML). `title` is the fact in words, shown as
+  // the tooltip and read out by screen readers. With `panel`, a click shows the paragraph of that
+  // name below the row (the names a number counts, the sources).
+  function alongItem(icon, value, title, panel) {
+    const label = esc(title);
+    return panel
+      ? `<button type="button" class="al-item al-btn" data-al-toggle="${panel}" aria-expanded="false" title="${label}" aria-label="${label}">${ALONG_ICONS[icon]}${value}</button>`
+      : `<span class="al-item" role="img" title="${label}" aria-label="${label}">${ALONG_ICONS[icon]}${value}</span>`;
+  }
+
+  // One rally: road, driving time, and what lies along it. `dot` marks it with its colour on the
+  // map (only needed when the trip has several rallies); `i` keeps its name lists apart.
+  function alongLegHtml(leg, kind, a, b, dot, i) {
+    const route = `${a.name} → ${b.name}`;
+    const items = [];
+    const panels = [];
+    const names = (key, list, countKey, textKey) => {
+      if (!list.length) return;
+      items.push(alongItem(key, num(list.length), tr(countKey, { n: list.length }), `${key}-${i}`));
+      panels.push(`<p class="along-detail" data-al-panel="${key}-${i}" hidden>${tr(textKey, { names: esc(list.join(", ")) })}</p>`);
+    };
     if (!leg.measured) {
-      details.push(tr("along.pending"));
+      items.push(alongItem("road", `≈ ${fmtKm(leg.km)}`, `${route} · ${tr("along.estimated", { km: fmtKm(leg.km) })}`));
+      items.push(alongItem("info", "", tr("along.pending")));
     } else {
-      if (leg.parks.length) details.push(tr("along.parks", { names: nameList(leg.parks) }));
-      if (leg.unesco.length) details.push(tr("along.unesco", { names: nameList(leg.unesco) }));
-      if (leg.coastKm) details.push(tr("scenic.coast", { km: fmtKm(leg.coastKm) }));
-      if (leg.mountainKm) details.push(tr("scenic.mountains", { km: fmtKm(leg.mountainKm) }));
-      if (leg.maxElevation !== null) details.push(tr("along.highest", { n: leg.maxElevation }));
+      items.push(alongItem("road", fmtKm(leg.km), `${route} · ${fmtKm(leg.km)}`));
+      if (leg.drivingMin !== null) {
+        items.push(alongItem("clock", fmtDuration(leg.drivingMin), cap(tr("along.driving", { time: fmtDuration(leg.drivingMin) }))));
+      }
+      names("park", leg.parks, "count.parks", "along.parks");
+      names("unesco", leg.unesco, "count.unesco", "along.unesco");
+      if (leg.coastKm) items.push(alongItem("coast", fmtKm(leg.coastKm), tr("scenic.coast", { km: fmtKm(leg.coastKm) })));
+      const highest = leg.maxElevation !== null ? tr("along.highest", { n: leg.maxElevation }) : "";
+      if (leg.mountainKm) {
+        const above = tr("scenic.mountains", { km: fmtKm(leg.mountainKm) });
+        items.push(alongItem("mountain", fmtKm(leg.mountainKm), highest ? `${above} · ${highest}` : above));
+      } else if (highest) {
+        items.push(alongItem("mountain", `${num(leg.maxElevation)} m`, cap(highest)));
+      }
       if (NO_SITE_LOOKUP.has(a.country) || NO_SITE_LOOKUP.has(b.country)) {
-        details.push(tr("along.europeOnly"));
-      } else if (!leg.parks.length && !leg.unesco.length && !leg.coastKm && !leg.mountainKm) {
-        details.push(tr("along.nothing"));
+        items.push(alongItem("info", "", cap(tr("along.europeOnly"))));
       }
     }
-    return (
-      `<li class="along-leg ${kind}">` +
-      `<p class="along-main">${esc(a.name)} → ${esc(b.name)} · ${main}</p>` +
-      countries +
-      `<p class="along-detail">${details.join(" · ")}</p>` +
-      "</li>"
-    );
+    const mark = dot ? `<i class="al-dot ${kind}" title="${esc(route)}"></i>` : "";
+    return `<li><div class="al-row">${mark}${items.join("")}</div>${panels.join("")}</li>`;
   }
 
   // The weather where you stop between rallies, for the month you arrive.
   function alongStopHtml(s, arrive, leave) {
     const w = R.weatherFor(climateData, s.id, arrive);
-    const text = w && monthWeather(w)
-      ? tr("along.weather", { weather: monthWeather(w), month: monthName(w.month, "long"), period: esc(climateData.period) })
-      : tr("along.noWeather");
     const when = leave && leave !== arrive ? `${fmtDay(arrive)} – ${fmtDay(leave)}` : fmtDay(arrive);
-    return (
-      '<li class="along-stop">' +
-      `<p class="along-main">${esc(s.name)}, ${when}</p>` +
-      `<p class="along-detail">${cap(text)}</p>` +
-      "</li>"
-    );
+    const items = [alongItem("pin", `<span class="al-place">${esc(s.name)}</span>`, `${s.name}, ${when}`)];
+    if (w && monthWeather(w)) {
+      const words = cap(tr("along.weather", { weather: monthWeather(w), month: monthName(w.month, "long"), period: climateData.period }));
+      if (w.t !== null) items.push(alongItem("temp", `${Math.round(w.t)} °C`, words));
+      if (w.sun !== null) items.push(alongItem("sun", `${num(w.sun)} h`, words));
+      if (w.rain !== null) items.push(alongItem("rain", tr("count.days", { n: Math.round(w.rain) }), words));
+    } else {
+      items.push(alongItem("info", "", tr("along.noWeather")));
+    }
+    return `<li><div class="al-row">${items.join("")}</div></li>`;
   }
 
   function alongHtml(t) {
@@ -1909,28 +1976,30 @@
     const n = t.legs.length;
     const items = [];
     t.legs.forEach((r, i) => {
-      items.push(alongLegHtml(f.legs[i], legKind(t, i), stations.get(r.from), stations.get(r.to)));
+      items.push(alongLegHtml(f.legs[i], legKind(t, i), stations.get(r.from), stations.get(r.to), n > 1, i));
       if (i < n - 1) items.push(alongStopHtml(stations.get(r.to), r.return, t.legs[i + 1].pickup));
     });
     // A one-way trip ends somewhere new, so the weather you arrive to is worth a line as well.
     if (t.type === "oneway") items.push(alongStopHtml(stations.get(lastLeg(t).to), lastLeg(t).return, null));
-    const summary =
-      f.drivingMinPerDay !== null
-        ? `<p class="wh-detail">${tr("along.summary", { perDay: fmtDuration(f.drivingMinPerDay), total: fmtDuration(f.drivingMin) })}</p>`
-        : "";
     const credits = [
       routeData && tr("along.creditRoutes", { link: OSRM }),
       climateData && tr("along.creditWeather", { link: OPEN_METEO }),
     ].filter(Boolean);
-    const title = tr("along.title");
-    return (
-      `<section class="along" aria-label="${esc(title)}">` +
-      `<h4>${title}</h4>` +
-      `<ol class="along-list">${items.join("")}</ol>` +
-      summary +
-      (credits.length ? `<p class="wh-credit">${tr("along.sources", { list: credits.join(", ") })}</p>` : "") +
-      "</section>"
-    );
+    // The last row is about the whole trip: the driving per day, and where the figures come from.
+    const whole = [];
+    if (f.drivingMinPerDay !== null) {
+      const words = tr("along.summary", { perDay: fmtDuration(f.drivingMinPerDay), total: fmtDuration(f.drivingMin) });
+      whole.push(alongItem("clock", tr("along.perDay", { time: fmtDuration(f.drivingMinPerDay) }), words));
+    }
+    if (credits.length) whole.push(alongItem("info", "", cap(tr("transit.sources")), "sources"));
+    if (whole.length) {
+      items.push(
+        `<li><div class="al-row">${whole.join("")}</div>` +
+        (credits.length ? `<p class="wh-credit" data-al-panel="sources" hidden>${tr("along.sources", { list: credits.join(", ") })}</p>` : "") +
+        "</li>"
+      );
+    }
+    return `<section class="along" aria-label="${esc(tr("along.title"))}"><ol class="along-list">${items.join("")}</ol></section>`;
   }
 
   function setHomeMode(mode, retry) {
@@ -1942,9 +2011,14 @@
       driveResults.delete(driveKey(end, home));
       transitResults.delete(transitKey(end, home, new Date(`${lastLeg(t).return}T${settings.dropoffTime}:00`).toISOString()));
     }
-    settings.homeMode = mode;
-    saveSettings();
-    renderWayHome(t);
+    if (!retry && whOpen && mode === settings.homeMode) {
+      closeWayHome(); // a second click on the open one folds it away
+    } else {
+      settings.homeMode = mode;
+      saveSettings();
+      openWayHome();
+      renderWayHome(t);
+    }
     $("results").querySelector(`.wh-tab[data-mode="${mode}"]`)?.focus(); // keep keyboard focus on the tabs
   }
 
@@ -1954,6 +2028,7 @@
     if (!fromPlay) stopPlay();
     const t = trips.find((x) => x.id === id);
     if (!t) return Promise.resolve();
+    if (id !== selectedId) closeWayHome(false);
     selectedId = id;
     for (const el of $("results").querySelectorAll(".trip.selected")) el.classList.remove("selected");
     const el = $("results").querySelector(`[data-id="${CSS.escape(id)}"]`);
@@ -1965,6 +2040,7 @@
   }
 
   function clearSelection() {
+    closeWayHome(false);
     selectedId = null;
     animToken++;
     layers.trip.clearLayers();
@@ -2040,10 +2116,12 @@
       chooseItinerary(Number(option.dataset.itinerary));
       return;
     }
-    const more = e.target.closest("[data-more]");
-    if (more) {
-      more.nextElementSibling.hidden = false;
-      more.remove();
+    // A number in "Along the way" shows the names it counts; the info button shows the sources.
+    const alToggle = e.target.closest("[data-al-toggle]");
+    if (alToggle) {
+      const panel = alToggle.closest(".along").querySelector(`[data-al-panel="${alToggle.dataset.alToggle}"]`);
+      panel.hidden = !panel.hidden;
+      alToggle.setAttribute("aria-expanded", String(!panel.hidden));
       return;
     }
     if (e.target.closest(".cost-opt")) return; // the insurance box; its "change" is handled below

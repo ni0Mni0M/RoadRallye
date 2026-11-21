@@ -575,18 +575,20 @@ input[type="range"] { width: 100%; margin: 4px 0; accent-color: var(--text); }
 
 /* Way home panel inside the selected trip */
 
-.wayhome { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--line); cursor: default; }
-.wayhome h4 { margin: 0; font-size: 14px; font-weight: 600; }
-.wh-sub { margin: 2px 0 10px; font-size: 12.5px; color: var(--muted); }
+.wayhome { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); cursor: default; }
+.wh-head { margin: 0 0 6px; font-size: 12.5px; color: var(--muted); }
+.wh-sub { margin: 10px 0 0; font-size: 12.5px; color: var(--muted); }
 
 .wh-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
 
+/* Folded: just the two ways with their times. A click opens the details below. */
 .wh-tab {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1px;
-  padding: 6px 4px;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0 6px;
+  padding: 5px 4px;
   font: inherit;
   font-size: 13px;
   font-weight: 500;
@@ -611,17 +613,20 @@ input[type="range"] { width: 100%; margin: 4px 0; accent-color: var(--text); }
 
 /* "Along the way" inside the selected trip: each rally, and the weather where you stop */
 
-.along { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--line); cursor: default; }
-.along h4 { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
-.along-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-.along-list li { padding-left: 10px; border-left: 3px solid var(--line); }
-.along-leg.out { border-left-color: var(--out); }
-.along-leg.mid { border-left-color: var(--mid); }
-.along-leg.back { border-left-color: var(--back); }
-.along-stop { border-left-style: dotted; }
-.along-main { margin: 0; font-size: 13px; font-weight: 500; }
-.along-detail { margin: 2px 0 0; font-size: 12.5px; color: var(--muted); }
-.more-names { padding: 0; font: inherit; color: inherit; background: none; border: 0; text-decoration: underline; cursor: pointer; }
+.along { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); cursor: default; }
+.along-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.al-row { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; font-size: 12.5px; color: var(--muted); }
+.al-item { display: inline-flex; align-items: center; white-space: nowrap; }
+.al-item .wh-icon { flex: none; vertical-align: 0; }
+.al-item .wh-icon:last-child { margin-right: 0; }
+.al-btn { padding: 0; font: inherit; color: inherit; background: none; border: 0; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
+.al-btn:hover, .al-btn[aria-expanded="true"] { color: var(--text); }
+.al-place { color: var(--text); font-weight: 500; }
+.al-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--out); }
+.al-dot.mid { background: var(--mid); }
+.al-dot.back { background: var(--back); }
+.along-detail { margin: 2px 0 2px; font-size: 12.5px; color: var(--muted); }
+.along .wh-credit { margin: 2px 0 0; }
 
 .wh-options { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 
