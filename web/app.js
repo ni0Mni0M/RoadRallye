@@ -441,7 +441,6 @@
     $("returnRadiusOut").textContent = fmtKm(v("returnRadius"));
     $("maxWaitOut").textContent = v("maxWait") === 0 ? tr("filters.sameDayOnly") : tr("filters.upToDays", { n: v("maxWait") });
     $("hopRadiusOut").textContent = v("hopRadius") === 0 ? tr("filters.off") : tr("filters.upTo", { km: fmtKm(v("hopRadius")) });
-    $("wayHomeOptions").hidden = !$("wayHome").checked;
 
     // One-way or round trip: which filters apply, and what they are called. Read from the form,
     // so the panel follows the switch at once (the trips follow a moment later).

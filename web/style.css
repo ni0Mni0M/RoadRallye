@@ -257,7 +257,7 @@ input[type="range"] { width: 100%; margin: 4px 0; accent-color: var(--text); }
 .check.small { font-size: 13px; margin-bottom: 0; align-items: center; }
 .check.small input { width: 16px; height: 16px; margin: 0; }
 
-/* Settings: costs and the way home, opened with the sliders button in the header */
+/* Settings: costs and the details of the way home, opened with the sliders button in the header */
 
 .settings { margin-top: 16px; padding: 12px 14px 6px; border-radius: var(--radius); background: var(--soft); }
 .settings-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
