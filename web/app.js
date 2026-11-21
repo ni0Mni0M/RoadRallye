@@ -252,7 +252,7 @@
     legs: "2", // rallies per round trip
     legsOneWay: "1", // rallies per one-way trip
     sort: "start",
-    wayHome: false,
+    wayHome: true,
     homeMode: "transit",
     dropoffTime: "12:00",
     carConsumption: 7,
@@ -293,7 +293,7 @@
     if (!LEG_CHOICES.includes(s.legs)) s.legs = DEFAULTS.legs;
     if (!ONE_WAY_LEG_CHOICES.includes(s.legsOneWay)) s.legsOneWay = DEFAULTS.legsOneWay;
     if (!HOME_MODES.includes(s.homeMode)) s.homeMode = DEFAULTS.homeMode;
-    s.wayHome = s.wayHome === true;
+    s.wayHome = s.wayHome !== false;
     s.includeInsurance = s.includeInsurance === true;
     if (!TIME_OF_DAY.test(s.dropoffTime)) s.dropoffTime = DEFAULTS.dropoffTime;
     for (const key of ["carConsumption", "fuelPrice", "vanConsumption"]) if (!(s[key] > 0)) s[key] = DEFAULTS[key];
@@ -1615,13 +1615,16 @@
 
   // The way home shows as two buttons (train & bus, car); a click on one opens its details. They
   // fold away again with a second click on that button, after 30 seconds without any input, once
-  // they are scrolled out of sight, and when another trip is picked (selectTrip).
+  // they have been scrolled out of sight for 5 seconds, and when another trip is picked (selectTrip).
   const WH_IDLE_MS = 30000;
+  const WH_UNSEEN_MS = 5000;
   const WH_INPUTS = ["pointerdown", "pointermove", "keydown", "wheel", "touchstart", "scroll"];
   let whOpen = false;
   let whIdleTimer = 0;
+  let whUnseenTimer = 0;
   const whSeen = new IntersectionObserver((entries) => {
-    if (whOpen && !entries[entries.length - 1].isIntersecting) closeWayHome();
+    clearTimeout(whUnseenTimer); // back in sight in time: they stay
+    if (whOpen && !entries[entries.length - 1].isIntersecting) whUnseenTimer = setTimeout(closeWayHome, WH_UNSEEN_MS);
   });
 
   function restartWhIdle() {
@@ -1642,6 +1645,7 @@
     if (!whOpen) return;
     whOpen = false;
     clearTimeout(whIdleTimer);
+    clearTimeout(whUnseenTimer);
     whSeen.disconnect();
     for (const type of WH_INPUTS) document.removeEventListener(type, restartWhIdle, { capture: true });
     const t = trips.find((x) => x.id === selectedId);

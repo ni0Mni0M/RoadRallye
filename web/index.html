@@ -96,6 +96,10 @@
 
           <fieldset>
             <legend data-i18n="wayhome.legend">Way home</legend>
+            <label class="check">
+              <input type="checkbox" id="wayHome">
+              <span data-i18n="wayhome.plan">Plan how to get home from the last drop-off</span>
+            </label>
             <label class="field">
               <span class="label" data-i18n="wayhome.dropoff">Drop off the last van around</span>
               <input type="time" id="dropoffTime" step="900">
@@ -185,15 +189,6 @@
               <div id="providers"></div>
             </div>
           </details>
-        </fieldset>
-
-        <!-- The switch stays with the filters; its drop-off time and the car's consumption are settings. -->
-        <fieldset>
-          <legend data-i18n="wayhome.legend">Way home</legend>
-          <label class="check">
-            <input type="checkbox" id="wayHome">
-            <span data-i18n="wayhome.plan">Plan how to get home from the last drop-off</span>
-          </label>
         </fieldset>
       </form>
 
