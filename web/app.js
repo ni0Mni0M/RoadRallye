@@ -266,8 +266,8 @@
     oneWayFee: 250, // what dropping it off at another station costs on a normal rental (a rough guess)
     view: "trips",
     rankMode: "destinations",
-    rankBy: "dates",
-    combine: ["dates", "warmth", "scenic"],
+    rankBy: "trips",
+    combine: ["trips", "weather", "scenic"],
     onlyFavs: false,
     hideVisited: false,
   };
@@ -873,22 +873,13 @@
   function fillRankControls() {
     for (const el of document.querySelectorAll('input[name="view"]')) el.checked = el.value === settings.view;
     for (const el of document.querySelectorAll('input[name="rankMode"]')) el.checked = el.value === settings.rankMode;
-    if (rankUnavailable(settings.rankBy)) settings.rankBy = "dates";
+    if (rankUnavailable(settings.rankBy)) settings.rankBy = "trips";
 
     const option = (key, label) => {
       const why = rankUnavailable(key);
       return `<option value="${key}"${why ? " disabled" : ""}>${esc(label)}${why ? ` (${why})` : ""}</option>`;
     };
-    const groups = new Map();
-    for (const [key, m] of Object.entries(R.METRICS)) {
-      if (!groups.has(m.group)) groups.set(m.group, []);
-      groups.get(m.group).push(key);
-    }
-    const group = (label, keys) => `<optgroup label="${esc(label)}">${keys.map((k) => option(k, metricLabel(k))).join("")}</optgroup>`;
-    $("rankBy").innerHTML =
-      [...groups].map(([g, keys]) => group(tr(`rankGroup.${g}`), keys)).join("") +
-      group(tr("rankGroup.Personal"), ["favourites"]) +
-      group(tr("rankGroup.Several"), ["combined"]);
+    $("rankBy").innerHTML = [...Object.keys(R.METRICS), "favourites", "combined"].map((k) => option(k, metricLabel(k))).join("");
     $("rankBy").value = settings.rankBy;
 
     $("combineChips").hidden = settings.rankBy !== "combined";
@@ -902,7 +893,7 @@
 
   function computeRanking() {
     if (!allTrips.length) return [];
-    if (rankUnavailable(settings.rankBy)) settings.rankBy = "dates";
+    if (rankUnavailable(settings.rankBy)) settings.rankBy = "trips";
     const rows = R.rankStations(allTrips, { stations, facts }, {
       mode: settings.rankMode,
       tripType: settings.tripType,
@@ -928,21 +919,16 @@
   function fmtMetric(key, v) {
     if (v === null || v === undefined) return "–";
     switch (key) {
-      case "dates": return tr("count.dates", { n: v });
-      case "backups": return tr("value.backups", { n: v });
       case "trips": return tr("count.trips", { n: v });
       case "stay": return v ? tr("count.days", { n: v }) : tr("value.sameDay");
       case "pace": return tr("value.pace", { n: Math.round(v) });
       case "distance": return fmtKm(v);
       case "countries": return tr("count.countries", { n: v });
-      case "warmth": return `${num(Math.round(v))} °C`;
-      case "sun": return tr("value.sun", { n: num(v, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) });
-      case "dry": return tr("count.rainyDays", { n: Math.round(v) });
       case "scenic": return tr("count.points", { n: Math.round(v) });
       case "cost": return euros(v);
-      case "costPerDay": return tr("value.perDay", { price: euros(v) });
       case "fresh": return tr("value.fresh", { n: v });
       case "soonest": return v === 0 ? tr("value.today") : v === 1 ? tr("value.tomorrow") : tr("value.inDays", { n: v });
+      case "weather": // a score among the listed stations; the line below it gives the degrees, sun and rain
       case "combined": return `${Math.round(v * 100)}/100`;
       default: return String(v);
     }
@@ -989,12 +975,9 @@
         return row.best.scenic ? scenicText(row.best.scenic) : "";
       case "countries":
         return esc(f(row.best.countries).countries.map(countryName).join(" → "));
-      case "warmth":
-      case "sun":
-      case "dry":
+      case "weather":
         return weatherText(row);
-      case "cost":
-      case "costPerDay": {
+      case "cost": {
         const t = row.best.cost;
         return tr("detail.cost", { price: euros(f(t).cost), route: esc(routeText(t)), days: tr("count.days", { n: t.totalDays }) });
       }
@@ -1082,7 +1065,7 @@
 
     const key = rankKey();
     const credits = [];
-    if (["warmth", "sun", "dry"].includes(key) || (key === "combined" && settings.combine.some((k) => ["warmth", "sun", "dry"].includes(k)))) {
+    if (key === "weather" || (key === "combined" && settings.combine.includes("weather"))) {
       credits.push(tr("credit.weather", { link: OPEN_METEO }));
     }
     if (routeData) credits.push(tr("credit.routes", { link: OSRM }));
@@ -1828,8 +1811,11 @@
       return;
     }
 
+    // Nothing is looked up until its button is clicked: the routing and timetable services are
+    // free and shared, and most trips are only glanced at.
+    const asked = (m) => whOpen && settings.homeMode === m;
     const drive = driveResults.get(driveKey(end, home)) || null;
-    if (!drive) {
+    if (!drive && asked("car")) {
       loadDrive(end, home).then(() => {
         if (selectedId === t.id) renderWayHome(t);
       });
@@ -1838,7 +1824,7 @@
     const leaveAfter = new Date(`${date}T${settings.dropoffTime}:00`).toISOString(); // your local time
     const tKey = transitKey(end, home, leaveAfter);
     const live = transitResults.get(tKey) || null;
-    if (!live) {
+    if (!live && asked("transit")) {
       loadTransit(end, home, leaveAfter).then(() => {
         if (selectedId === t.id) renderWayHome(t);
       });
@@ -1853,15 +1839,16 @@
     const tab = (m, label, summary) =>
       `<button type="button" role="tab" class="wh-tab" data-mode="${m}" aria-selected="${whOpen && m === mode}">${label}<span>${summary}</span></button>`;
     const body = !whOpen ? "" : mode === "car" ? carHtml(end, home, drive) : transitHtml(end, home, transit, live, chosen, date);
+    // Before the lookup the train button shows the rough range from the distance, the car button nothing.
     const transitSummary = !live
-      ? "…"
+      ? asked("transit") ? "…" : `≈ ${fmtRange(transit.lowMin, transit.highMin)}`
       : liveOk ? fmtDuration(live.options[0].durationMin) : fmtRange(transit.lowMin, transit.highMin);
 
     panel.innerHTML =
       `<p class="wh-head">${tr("wh.title", { place: esc(end.name) })}</p>` +
       `<div class="wh-tabs" role="tablist" aria-label="${esc(tr("wh.tabs"))}">` +
       tab("transit", esc(tr("wh.transit")), transitSummary) +
-      tab("car", esc(tr("wh.car")), !drive ? "…" : drive.error ? "–" : fmtDuration(drive.min)) +
+      tab("car", esc(tr("wh.car")), !drive ? (asked("car") ? "…" : "") : drive.error ? "–" : fmtDuration(drive.min)) +
       "</div>" +
       (whOpen
         ? `<p class="wh-sub">${tr("wh.sub", { date: fmtDay(date), km: fmtKm(crowKm), home: esc(home.name) })}</p>` +

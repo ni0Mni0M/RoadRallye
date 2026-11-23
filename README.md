@@ -94,15 +94,13 @@ they end. **Where to start** ranks the stations they start from.
 
 | Rank by | What it means |
 | --- | --- |
-| Most departure dates | Different days you could leave on for that place |
-| Most backup options | Ways back per outbound rally, if your first choice gets booked (round trips only) |
 | Most trips | All matching trips to or through the station |
 | Longest stay | Most days there between rallies (round trips only) |
 | Most relaxed pace | Fewest km a day on its gentlest trip |
 | Farthest from home, Most countries | How far it takes you, and how many countries you cross |
-| Warmest, Sunniest, Fewest rainy days | Typical weather in the month you'd arrive (2024–2025 average) |
+| Best weather | Warmth, sun and few rainy days in the month you'd arrive (2024–2025 average), as one score: how the station does on each of the three among the listed ones, averaged. The row shows the three figures |
 | Most scenic route | National parks, World Heritage sites, coast and mountains along the route, each shown |
-| Cheapest trip, Cheapest per day | The estimated cost of its cheapest trip |
+| Cheapest trip | The estimated cost of its cheapest trip |
 | New this week, Departing soonest | Rallies first seen in the last 7 days; the earliest departure |
 | Favourites first | Your starred stations on top |
 | Combined score | Pick several of the above; each station gets the average of its positions, with bars showing why |
@@ -113,8 +111,11 @@ site and 1 per 20 km by the sea or above 1,000 m, and the row always lists what 
 
 ## Way home
 
-Tick **Plan how to get home** and select a trip. The panel compares two ways back from the
-last drop-off, and the chosen one is drawn on the map as a dashed line. A one-way trip ends far
+With **Plan how to get home** ticked in the settings (it is by default), a selected trip shows two
+buttons, **Train & bus** and **Car**. A click on one looks that way up and opens its details; nothing
+is asked of the timetable or routing service before that. The details fold away again with a second
+click, after 30 seconds without input, 5 seconds after they are scrolled out of sight, or when you
+pick another trip. The chosen way is drawn on the map as a dashed line. A one-way trip ends far
 from home, so this is where you see what getting back takes. The way back ends at the central
 station of your home city (for example Berlin Hbf), not at the rental depot, which is often in a
 suburb or the next town. The stations are listed in `web/centers.js`; a roadsurfer city missing

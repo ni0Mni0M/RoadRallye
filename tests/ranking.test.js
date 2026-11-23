@@ -252,13 +252,11 @@ test("without a normal price there is nothing to compare with", () => {
   assert.equal(f.saving, null);
 });
 
-test("ranks by departure dates, backups and round trips", () => {
+test("ranks by trips and counts the departure dates", () => {
   const byTrips = rank("trips");
   assert.equal(byTrips[0].name, "Madrid");
   assert.equal(byTrips[0].values.trips, 2);
   assert.equal(byTrips[0].values.dates, 1); // both Madrid trips leave on the same day
-  assert.equal(byTrips[0].values.backups, 2); // two ways back after that one outbound rally
-  assert.equal(rank("backups")[0].name, "Madrid");
 });
 
 test("ranks by stay, distance and pace", () => {
@@ -268,9 +266,12 @@ test("ranks by stay, distance and pace", () => {
 });
 
 test("ranks by weather in the month you arrive", () => {
-  assert.deepEqual(names(rank("warmth")), ["Madrid", "Barcelona", "Antwerp"]);
-  assert.deepEqual(names(rank("dry")), ["Madrid", "Barcelona", "Antwerp"]);
-  assert.equal(rank("sun")[0].name, "Barcelona");
+  // Madrid is warmest and driest, Barcelona sunniest, Antwerp last on all three.
+  const rows = rank("weather");
+  assert.deepEqual(names(rows), ["Madrid", "Barcelona", "Antwerp"]);
+  assert.deepEqual(rows.map((r) => Number(r.values.weather.toFixed(3))), [0.833, 0.667, 0]);
+  assert.deepEqual([rows[1].values.warmth, rows[1].values.sun, rows[1].values.dry], [18, 7, 5]); // what it is made of
+  assert.equal(rank("weather", { mode: "starts" })[0].rank, null); // only for where you go
 });
 
 test("ranks by cost and keeps the cheapest trip for explanation", () => {
@@ -293,9 +294,9 @@ test("starting stations are ranked by the trips that begin there", () => {
 });
 
 test("combined ranking averages percentiles and shows the parts", () => {
-  const rows = rank("combined", { combine: ["warmth", "trips"] });
+  const rows = rank("combined", { combine: ["weather", "trips"] });
   assert.equal(rows[0].name, "Madrid");
-  assert.deepEqual(rows[0].parts, { warmth: 1, trips: 1 });
+  assert.deepEqual(rows[0].parts, { weather: 1, trips: 1 });
   assert.equal(rows[2].name, "Antwerp");
 });
 
@@ -368,26 +369,26 @@ test("one-way destinations include the places trips end at", () => {
 });
 
 test("the weather at a one-way destination is for the month you arrive", () => {
-  const rows = rankOneWay("warmth");
+  const rows = rankOneWay("weather");
   assert.deepEqual(names(rows).slice(0, 3), ["Madrid", "Barcelona", "Antwerp"]);
   assert.equal(rows[2].arrivalMonth, 10); // Antwerp is only ever the end of a trip, reached on 14 Nov
   assert.equal(rows[3].rank, null); // no weather data for Hamburg and Marburg
 });
 
-test("backups and stay are figures for round trips only", () => {
+test("a stay is a figure for round trips only", () => {
   assert.equal(R.metricApplies("stay", "destinations", "round"), true);
   assert.equal(R.metricApplies("stay", "destinations", "oneway"), false);
   assert.equal(R.metricApplies("stay", "starts", "round"), false);
-  assert.equal(R.metricApplies("backups", "starts", "oneway"), false);
-  assert.equal(R.metricApplies("dates", "starts", "oneway"), true);
+  assert.equal(R.metricApplies("trips", "starts", "oneway"), true);
+  assert.equal(R.metricApplies("dates", "starts", "oneway"), false); // folded into the trips
   assert.equal(R.metricApplies("nonsense", "starts", "oneway"), false);
 
   const rows = rankOneWay("trips");
-  assert.ok(rows.every((r) => r.values.stay === null && r.values.backups === null));
+  assert.ok(rows.every((r) => r.values.stay === null));
   assert.ok(rankOneWay("stay").every((r) => r.rank === null));
-  const combined = rankOneWay("combined", { combine: ["stay", "backups", "trips"] });
+  const combined = rankOneWay("combined", { combine: ["stay", "trips"] });
   assert.deepEqual(Object.keys(combined[0].parts), ["trips"]);
-  assert.ok(rank("trips").every((r) => r.values.stay !== null && r.values.backups !== null)); // still there for round trips
+  assert.ok(rank("trips").every((r) => r.values.stay !== null)); // still there for round trips
 });
 
 test("a one-way trip costs one rally, and its facts cover a single leg", () => {

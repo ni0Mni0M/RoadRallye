@@ -13,31 +13,29 @@
   const SCENIC_WEIGHTS = { park: 3, unesco: 2, coastKm: 1 / 20, mountainKm: 1 / 20 };
 
   // better: which end of the scale wins. modes: which list it applies to. needs: extra data.
-  // types: the kinds of trip it says something about (both when left out). Backups are the ways back
-  // after an outbound rally and a stay is the time between two rallies, so neither fits one-way trips.
+  // types: the kinds of trip it says something about (both when left out). A stay is the time
+  // between two rallies, so it doesn't fit one-way trips.
   const METRICS = {
-    dates: { group: "Opportunities", label: "Most departure dates", better: "high", modes: ["destinations", "starts"] },
-    backups: { group: "Opportunities", label: "Most backup options", better: "high", modes: ["destinations", "starts"], types: ["round"] },
-    trips: { group: "Opportunities", label: "Most trips", better: "high", modes: ["destinations", "starts"] },
-    stay: { group: "Time there", label: "Longest stay", better: "high", modes: ["destinations"], types: ["round"] },
-    pace: { group: "Pace", label: "Most relaxed pace", better: "low", modes: ["destinations", "starts"] },
-    distance: { group: "Adventure", label: "Farthest from home", better: "high", modes: ["destinations"] },
-    countries: { group: "Adventure", label: "Most countries", better: "high", modes: ["destinations", "starts"] },
-    warmth: { group: "Season", label: "Warmest", better: "high", modes: ["destinations"], needs: "climate" },
-    sun: { group: "Season", label: "Sunniest", better: "high", modes: ["destinations"], needs: "climate" },
-    dry: { group: "Season", label: "Fewest rainy days", better: "low", modes: ["destinations"], needs: "climate" },
-    scenic: { group: "Scenery", label: "Most scenic route", better: "high", modes: ["destinations", "starts"], needs: "routes" },
-    cost: { group: "Cost", label: "Cheapest trip", better: "low", modes: ["destinations", "starts"] },
-    costPerDay: { group: "Cost", label: "Cheapest per day", better: "low", modes: ["destinations", "starts"] },
-    fresh: { group: "Freshness", label: "New this week", better: "high", modes: ["destinations", "starts"], needs: "tracking" },
-    soonest: { group: "Freshness", label: "Departing soonest", better: "low", modes: ["destinations", "starts"] },
+    trips: { label: "Most trips", better: "high", modes: ["destinations", "starts"] },
+    stay: { label: "Longest stay", better: "high", modes: ["destinations"], types: ["round"] },
+    pace: { label: "Most relaxed pace", better: "low", modes: ["destinations", "starts"] },
+    distance: { label: "Farthest from home", better: "high", modes: ["destinations"] },
+    countries: { label: "Most countries", better: "high", modes: ["destinations", "starts"] },
+    weather: { label: "Best weather", better: "high", modes: ["destinations"], needs: "climate" },
+    scenic: { label: "Most scenic route", better: "high", modes: ["destinations", "starts"], needs: "routes" },
+    cost: { label: "Cheapest trip", better: "low", modes: ["destinations", "starts"] },
+    fresh: { label: "New this week", better: "high", modes: ["destinations", "starts"], needs: "tracking" },
+    soonest: { label: "Departing soonest", better: "low", modes: ["destinations", "starts"] },
   };
+
+  // Best weather is one figure made of three: how a station does on each of them among the listed
+  // stations (percentiles), averaged. The three stay in a row's values, to show what it is made of.
+  const WEATHER_PARTS = { warmth: "high", sun: "high", dry: "low" };
 
   // Route info is stored once per station pair, lower id first: roadsurfer's numbers in numeric order,
   // then Imoova's text ids ("imoova-12"). fetch_route_info.py orders them the same way.
   const idBefore = (a, b) => (typeof a === typeof b ? a < b : typeof a === "number");
   const routeKey = (a, b) => (idBefore(a, b) ? `${a}-${b}` : `${b}-${a}`);
-  const legKey = (r) => `${r.from}-${r.to}-${r.pickup}`;
 
   // Whether a metric says anything in this list ("destinations" | "starts") for this kind of trip.
   function metricApplies(key, mode, tripType = "round") {
@@ -205,9 +203,6 @@
     const applies = (key) => metricApplies(key, opts.mode, opts.tripType);
     const dates = [...new Set(list.map((t) => t.legs[0].pickup))].sort();
 
-    const byFirstLeg = new Map();
-    for (const t of list) byFirstLeg.set(legKey(t.legs[0]), (byFirstLeg.get(legKey(t.legs[0])) || 0) + 1);
-
     // Days spent here between rallies, and the month you arrive (for the weather).
     let stay = 0;
     const arrivals = [];
@@ -238,7 +233,6 @@
       dateList: dates,
       values: {
         dates: dates.length,
-        backups: applies("backups") ? Math.round(mean([...byFirstLeg.values()]) * 10) / 10 : null,
         trips: list.length,
         stay: applies("stay") ? stay : null,
         pace: facts(relaxedTrip).kmPerDay,
@@ -249,7 +243,6 @@
         dry: opts.mode === "destinations" ? weather("rain") : null,
         scenic: scenicTrip ? facts(scenicTrip).scenic : null,
         cost: facts(cheapTrip).cost,
-        costPerDay: Math.min(...list.map((t) => facts(t).costPerDay)),
         fresh: tracking ? list.filter((t) => t.legs.some((r) => r.first_seen && r.first_seen >= opts.freshSince)).length : null,
         soonest: M.daysBetween(opts.today, dates[0]),
       },
@@ -259,8 +252,7 @@
   }
 
   // 1 for the best station on a metric, 0 for the worst; null when the metric has no value.
-  function percentiles(rows, key) {
-    const better = METRICS[key].better;
+  function percentiles(rows, key, better = METRICS[key].better) {
     const valued = rows.filter((r) => r.values[key] !== null && r.values[key] !== undefined);
     const sorted = [...valued].sort((a, b) => (better === "high" ? b.values[key] - a.values[key] : a.values[key] - b.values[key]));
     const out = new Map();
@@ -289,6 +281,12 @@
       }
     }
     const rows = [...groups].map(([id, list]) => stationRow(id, list, ctx, opts));
+
+    const weatherTables = Object.entries(WEATHER_PARTS).map(([key, better]) => percentiles(rows, key, better));
+    for (const r of rows) {
+      const parts = weatherTables.filter((table) => table.has(r.id)).map((table) => table.get(r.id));
+      r.values.weather = mean(parts);
+    }
 
     let score;
     if (opts.by === "combined") {

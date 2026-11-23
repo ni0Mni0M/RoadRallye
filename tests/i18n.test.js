@@ -61,7 +61,6 @@ test("every text the page asks for is in en.js", () => {
     ...[...html.matchAll(/data-i18n-attr="([^"]+)"/g)].flatMap((m) => m[1].split(";").map((pair) => pair.split(":")[1].trim())),
     // Keys app.js puts together.
     ...Object.keys(R.METRICS).map((k) => `metric.${k}`),
-    ...Object.values(R.METRICS).map((m) => `rankGroup.${m.group}`),
     "metric.favourites", "metric.combined", "page.title", "lang.button", "lang.menu",
     ...["chip", "map.trips", "menu.trips"].flatMap((p) => ["via", "to", "toOrVia"].map((v) => `${p}.${v}`)),
     ...["destinations", "starts"].flatMap((mode) => ["oneway", "round"].map((type) => `rank.what.${mode}.${type}`)),
