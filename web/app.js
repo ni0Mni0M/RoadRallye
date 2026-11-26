@@ -246,8 +246,8 @@
     returnRadius: 300,
     earliest: today,
     latest: M.addDays(today, 60),
-    maxWait: 2,
-    hopRadius: 0,
+    maxWait: 5,
+    hopRadius: 100,
     tripType: "oneway",
     legs: "2", // rallies per round trip
     legsOneWay: "1", // rallies per one-way trip
@@ -305,8 +305,9 @@
     s.combine = Array.isArray(s.combine) ? s.combine.filter((k) => R.METRICS[k]) : DEFAULTS.combine;
     s.onlyFavs = s.onlyFavs === true;
     s.hideVisited = s.hideVisited === true;
-    if (!s.earliest || s.earliest < today) s.earliest = today;
-    if (!s.latest || s.latest < s.earliest) s.latest = M.addDays(s.earliest, 60);
+    // The dates are not remembered: every load starts with the next 60 days.
+    s.earliest = DEFAULTS.earliest;
+    s.latest = DEFAULTS.latest;
     return s;
   }
 
@@ -350,7 +351,7 @@
   let animToken = 0;
   let playToken = 0;
   let playing = false;
-  let landing = document.documentElement.classList.contains("landing"); // set in index.html on a first visit
+  let landing = document.documentElement.classList.contains("landing"); // set in index.html on every load
   let mapInsetLeft = 0; // px of the map hidden under the panel while the landing page slides away
   let demoToken = 0;
 
@@ -2338,7 +2339,7 @@
 
   // ---------- Landing page ----------
 
-  // On a first visit the panel is a card over a full-window map (see style.css) that asks for home,
+  // On every load the panel is a card over a full-window map (see style.css) that asks for home,
   // dates and the kind of trip. Behind it the map previews the choice: it moves the chosen home into
   // the free space beside the card and plays rallies that start there.
 

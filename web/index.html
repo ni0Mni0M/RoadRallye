@@ -6,15 +6,9 @@
   <title>Rally Trips</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
   <script>
-    // First visit (no saved settings yet) or "?landing" in the address: start with the landing page.
-    // Decided here, before anything is drawn, so the normal layout doesn't flash first.
-    try {
-      if (!localStorage.getItem("rally-finder-settings-v1") || /[?&]landing\b/.test(location.search)) {
-        document.documentElement.classList.add("landing");
-      }
-    } catch (e) {
-      document.documentElement.classList.add("landing");
-    }
+    // Every load starts with the landing page.
+    // Set here, before anything is drawn, so the normal layout doesn't flash first.
+    document.documentElement.classList.add("landing");
     // A theme chosen with the sun/moon button; without one the page follows the system.
     try {
       var theme = localStorage.getItem("rally-finder-theme");
