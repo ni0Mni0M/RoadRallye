@@ -127,10 +127,16 @@
 
         <fieldset>
           <legend data-i18n="filters.where">Where</legend>
-          <label class="field">
-            <span class="label" data-i18n="filters.home">Home</span>
-            <select id="home"></select>
-          </label>
+          <div class="field">
+            <span class="label" id="homeLabel" data-i18n="filters.home">Home</span>
+            <div class="picker" id="home">
+              <button type="button" class="picker-btn" id="homeBtn" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="homeLabel homeBtnText">
+                <span id="homeBtnText"></span>
+                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+              </button>
+              <div class="picker-list" id="homeList" role="listbox" aria-labelledby="homeLabel" tabindex="-1" hidden></div>
+            </div>
+          </div>
           <label class="field slider slider-out">
             <span class="label"><span data-i18n="filters.startWithin">Start within</span> <output id="startRadiusOut"></output></span>
             <input type="range" id="startRadius" min="0" max="300" step="10">

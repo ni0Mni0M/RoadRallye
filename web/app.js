@@ -365,26 +365,148 @@
 
   // ---------- Form ----------
 
+  // The home station is picked from a list of our own rather than a <select>: per country it puts the
+  // stations that have trips with the current filters first, each with its number, and the rest below
+  // a line. $("home").value reads and sets the choice like a form field's, and a pick fires "change".
+  const homePick = $("home");
+  const homeBtn = $("homeBtn");
+  const homeList = $("homeList");
+  let homeValue = "";
+  let homeActive = ""; // the station the keyboard or pointer is on while the list is open
+  Object.defineProperty(homePick, "value", {
+    get: () => homeValue,
+    set(v) {
+      homeValue = String(v);
+      fillHomeSelect();
+    },
+  });
+
+  const homeOpen = () => !homeList.hidden;
+  const homeOptions = () => [...homeList.querySelectorAll("[role=option]")];
+
   function fillHomeSelect() {
+    const lang = I18n.locale();
+    // Until every station is counted (and while the dates are wrong) the list is plain A to Z.
+    const count = (s) => (countsReady && homeCounts.get(s.id)) || 0;
+    const badge = (s) => (count(s) ? `<span class="picker-n">${count(s)}</span>` : "");
+    const option = (s) => {
+      const n = count(s);
+      const kind = n ? " has" : countsReady ? " none" : "";
+      const label = n ? ` aria-label="${esc(`${s.name}, ${tripsText(n)}`)}"` : "";
+      return (
+        `<div role="option" id="home-${esc(s.id)}" data-value="${esc(s.id)}" class="picker-opt${kind}"` +
+        ` aria-selected="${String(s.id) === homeValue}"${label}><span>${esc(s.name)}</span>${badge(s)}</div>`
+      );
+    };
     const byCountry = new Map();
     for (const s of homeChoices) {
       const country = s.country ? countryName(s.country) : tr("filters.otherCountry");
       if (!byCountry.has(country)) byCountry.set(country, []);
       byCountry.get(country).push(s);
     }
-    const lang = I18n.locale();
-    $("home").innerHTML = [...byCountry.keys()]
+    homeList.innerHTML = [...byCountry.keys()]
       .sort((a, b) => a.localeCompare(b, lang))
-      .map((country) => {
-        const options = byCountry
-          .get(country)
-          .sort((a, b) => a.name.localeCompare(b.name, lang))
-          .map((s) => `<option value="${s.id}">${esc(s.name)}</option>`)
-          .join("");
-        return `<optgroup label="${esc(country)}">${options}</optgroup>`;
+      .map((country, i) => {
+        const all = byCountry.get(country).sort((a, b) => a.name.localeCompare(b.name, lang));
+        const withTrips = all.filter((s) => count(s));
+        const rest = all.filter((s) => !count(s));
+        const rule = withTrips.length && rest.length ? `<div class="picker-rule" role="presentation"></div>` : "";
+        return (
+          `<div role="group" aria-labelledby="home-g${i}"><div class="picker-grp" id="home-g${i}">${esc(country)}</div>` +
+          `${withTrips.map(option).join("")}${rule}${rest.map(option).join("")}</div>`
+        );
       })
       .join("");
+    const chosen = stations.get(homeById.get(homeValue));
+    $("homeBtnText").innerHTML = chosen ? `<span>${esc(chosen.name)}</span>${badge(chosen)}` : "";
+    if (homeOpen()) setHomeActive(homeActive || homeValue);
   }
+
+  function setHomeActive(value, block = "nearest") {
+    const options = homeOptions();
+    const el = options.find((o) => o.dataset.value === String(value)) || options[0];
+    for (const o of options) o.classList.toggle("active", o === el);
+    homeActive = el ? el.dataset.value : "";
+    if (!el) return;
+    homeList.setAttribute("aria-activedescendant", el.id);
+    if (!block) return;
+    // Scroll the list only: scrollIntoView would move the panel around it as well.
+    const top = el.offsetTop;
+    const room = homeList.clientHeight - el.offsetHeight;
+    if (block === "center") homeList.scrollTop = top - room / 2;
+    else if (top < homeList.scrollTop) homeList.scrollTop = top - 4;
+    else if (top > homeList.scrollTop + room) homeList.scrollTop = top - room + 4;
+  }
+
+  function openHome() {
+    homeList.hidden = false;
+    homeBtn.setAttribute("aria-expanded", "true");
+    homeList.focus({ preventScroll: true });
+    setHomeActive(homeValue, "center");
+  }
+
+  function closeHome(refocus) {
+    if (!homeOpen()) return;
+    homeList.hidden = true;
+    homeBtn.setAttribute("aria-expanded", "false");
+    homeList.removeAttribute("aria-activedescendant");
+    homeActive = "";
+    if (refocus) homeBtn.focus();
+  }
+
+  function pickHome(value) {
+    closeHome(true);
+    if (!value || value === homeValue) return;
+    homePick.value = value;
+    homePick.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  homeBtn.addEventListener("click", () => (homeOpen() ? closeHome(true) : openHome()));
+  homeBtn.addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    e.preventDefault();
+    openHome();
+  });
+  homeList.addEventListener("click", (e) => {
+    const option = e.target.closest("[role=option]");
+    if (option) pickHome(option.dataset.value);
+  });
+  homeList.addEventListener("pointermove", (e) => {
+    const option = e.target.closest("[role=option]");
+    if (option && option.dataset.value !== homeActive) setHomeActive(option.dataset.value, null);
+  });
+
+  let homeTyped = ""; // letters typed in quick succession jump to the station that starts with them
+  let homeTypedTimer;
+  homeList.addEventListener("keydown", (e) => {
+    const options = homeOptions();
+    const at = options.findIndex((o) => o.dataset.value === homeActive);
+    const go = (i) => setHomeActive(options[Math.max(0, Math.min(options.length - 1, i))].dataset.value);
+    const steps = { ArrowDown: at + 1, ArrowUp: at - 1, PageDown: at + 8, PageUp: at - 8, Home: 0, End: options.length - 1 };
+    if (e.key in steps) go(steps[e.key]);
+    else if (e.key === "Enter" || (e.key === " " && !homeTyped)) pickHome(homeActive);
+    else if (e.key === "Escape") closeHome(true);
+    else if (e.key === "Tab") return closeHome(false);
+    else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      homeTyped += e.key;
+      clearTimeout(homeTypedTimer);
+      homeTypedTimer = setTimeout(() => (homeTyped = ""), 700);
+      // A single letter typed again moves on to the next station with that letter.
+      const from = homeTyped.length === 1 ? at + 1 : Math.max(at, 0);
+      const order = [...options.slice(from), ...options.slice(0, from)];
+      const typed = homeTyped.toLocaleLowerCase();
+      const hit = order.find((o) => o.firstChild.textContent.toLocaleLowerCase().startsWith(typed));
+      if (hit) setHomeActive(hit.dataset.value);
+    } else return;
+    e.preventDefault();
+    e.stopPropagation();
+  });
+  document.addEventListener("pointerdown", (e) => {
+    if (!homePick.contains(e.target)) closeHome(false);
+  });
+  homePick.addEventListener("focusout", (e) => {
+    if (e.relatedTarget && !homePick.contains(e.relatedTarget)) closeHome(false);
+  });
 
   // One checkbox per provider, shown only when the data has more than one.
   function fillProviders() {
@@ -513,6 +635,7 @@
   // Counting all of them takes up to a few hundred ms, so it runs in short slices, and only again
   // when a filter other than the home station changed.
   const homeCounts = new Map();
+  let countsReady = false; // every station is counted, so the home list can put the ones with trips first
   let countKey = "";
   let countToken = 0;
 
@@ -525,8 +648,9 @@
     countKey = key;
     const token = ++countToken;
     homeCounts.clear();
+    countsReady = false;
     if (error) {
-      updateHomeLabels();
+      fillHomeSelect();
       return;
     }
     const rallies = visibleRallies();
@@ -538,18 +662,11 @@
         const s = queue.shift();
         homeCounts.set(s.id, tripsFrom(s, rallies).length);
       }
-      if (queue.length) setTimeout(slice, 0);
-      else updateHomeLabels();
+      if (queue.length) return setTimeout(slice, 0);
+      countsReady = true;
+      fillHomeSelect();
     };
     setTimeout(slice, 0);
-  }
-
-  function updateHomeLabels() {
-    for (const option of $("home").options) {
-      const s = stations.get(homeById.get(option.value));
-      const n = homeCounts.get(s.id);
-      option.textContent = n === undefined ? s.name : `${s.name} (${n})`;
-    }
   }
 
   function dateError() {
@@ -2477,10 +2594,7 @@
     labelThemeToggle();
     updatePlayButton();
     labelInsurance();
-    const home = $("home").value;
     fillHomeSelect();
-    $("home").value = home;
-    updateHomeLabels();
     const unticked = providerBoxes().filter((box) => !box.checked).map((box) => box.value);
     fillProviders();
     for (const box of providerBoxes()) box.checked = !unticked.includes(box.value);
